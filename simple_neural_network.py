@@ -198,41 +198,37 @@ class LinearNetwork(Network):
     So we inherit the <Gate> class here
     """
 
-    def __init__(self, feature_length):
+    def __init__(self):
         super(LinearNetwork, self).__init__()
-        assert feature_length >= 2  # todo: support feature_length = 1
-        self._feature_length = feature_length
-        self._weights = [Unit(1.0) for _ in range(feature_length + 1)]
-        self.multi_gates = [MultiplyGate() for _ in range(feature_length)]
-        self.add_gates = [AddGate() for _ in range(feature_length)]
+        self.a = Unit(1.0)
+        self.b = Unit(1.0)
+        self.c = Unit(1.0)
+        self.multi_gate0 = MultiplyGate()
+        self.multi_gate1 = MultiplyGate()
+        self.add_gate0 = AddGate()
+        self.add_gate1 = AddGate()
 
-    def forward(self, *feature):
-        """
-        :param feature: <Unit> instances
-        """
-        assert len(feature) == self._feature_length
-        for i in range(len(feature)):
-            self.multi_gates[i].forward(self._weights[i], feature[i])
-        self.add_gates[0].forward(self.multi_gates[0], self._weights[-1])
-        for i in range(1, len(feature)):
-            self.utop = self.add_gates[i].forward(self.add_gates[i - 1], self.multi_gates[i])
+    def forward(self, x, y):
+        self.multi_gate0.forward(self.a, x)
+        self.multi_gate1.forward(self.b, y)
+        self.add_gate0.forward(self.multi_gate0, self.multi_gate1)
+        self.utop = self.add_gate1.forward(self.add_gate0, self.c)
         return self.utop
 
     def backward(self):
         self._set_utop_gradient()
-        # The sequence matters here!
-        for gate in reversed(self.add_gates):
-            gate.backward()
-        for gate in reversed(self.multi_gates):
-            gate.backward()
+        self.add_gate1.backward()
+        self.add_gate0.backward()
+        self.multi_gate1.backward()
+        self.multi_gate0.backward()
 
     @property
     def weights(self):
-        return self._weights
+        return [self.a, self.b, self.c]
 
     @property
     def weights_without_bias(self):
-        return self._weights[:-1]
+        return [self.a, self.b]
 
 
 class SingleNeuralNetwork(Network):
@@ -243,13 +239,13 @@ class SingleNeuralNetwork(Network):
     We can just think as it put the output of a <LinearNetwork> into a <ReLU> Gate
     """
 
-    def __init__(self, feature_length):
+    def __init__(self):
         super(SingleNeuralNetwork, self).__init__()
-        self.linear_network = LinearNetwork(feature_length)
+        self.linear_network = LinearNetwork()
         self.relu_gate = ReLUGate()
 
-    def forward(self, *feature):
-        self.linear_network.forward(*feature)
+    def forward(self, x, y):
+        self.linear_network.forward(x, y)
         self.utop = self.relu_gate.forward(self.linear_network)
         return self.utop
 
@@ -275,15 +271,16 @@ class NeuralNetwork(Network):
     where n1, n2 is the output of <SingleNeuralNetwork>, just as simple as apply the LinearNetwork to the <SingleNeuralNetwork>
     """
 
-    def __init__(self, feature_length, neuro_number=2):
+    def __init__(self):
         super(NeuralNetwork, self).__init__()
-        self.neuros = [SingleNeuralNetwork(feature_length) for _ in range(neuro_number)]
-        self.linear_network = LinearNetwork(neuro_number)
+        self.neuro0 = SingleNeuralNetwork()
+        self.neuro1 = SingleNeuralNetwork()
+        self.linear_network = LinearNetwork()
 
-    def forward(self, *feature):
-        self.neuro0.forward(*feature)
-        self.neuro1.forward(*feature)
-        self.utop = self.linear_network.forward(self.neuros)
+    def forward(self, x, y):
+        self.neuro0.forward(x, y)
+        self.neuro1.forward(x, y)
+        self.utop = self.linear_network.forward(self.neuro0, self.neuro1)
         return self.utop
 
     def backward(self):
@@ -339,7 +336,7 @@ class BasicClassifier(object):
 
 class LinearClassifier(BasicClassifier):
     def __init__(self):
-        network = LinearNetwork(2)
+        network = LinearNetwork()
         super(LinearClassifier, self).__init__(network)
 
 

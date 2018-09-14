@@ -370,6 +370,7 @@ class AdvancedClassifier(object):
     Where, the X_i is 1*N feature vector, f(X_i) is the output (utop.value) of given Network
     """
 
+    # todo
     def __init__(self, network):
         self.network = network
         self.alpha = 0.1  # Regularization strength
