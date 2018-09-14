@@ -9,7 +9,7 @@ import math
 
 
 class Unit(object):
-    def __init__(self, value, gradient=None):
+    def __init__(self, value, gradient=0):
         self.value = value
         self.gradient = gradient
 
@@ -21,14 +21,6 @@ class Gate(object):
 
     def __init__(self):
         self.utop = None
-
-    def _set_utop_gradient(self):
-        """
-        Should only called by backward function
-        Set the utop gradient to 1.0 if it is the start of backward chain
-        """
-        if self.utop and self.utop.gradient is None:
-            self.utop.gradient = 1.0
 
     @property
     def value(self):
@@ -61,11 +53,19 @@ class Gate(object):
         raise NotImplementedError
 
     @abstractmethod
-    def backward(self):
+    def backward(self, overlay=False):
         """
         Run the backward process to update the gradient of each unit in the gate
+        :param overlay: set to True to overlay previous gradient, otherwise will reset and recalculate the gradient
         """
         raise NotImplementedError
+
+    def set_utop_gradient(self, gradient):
+        """
+        Must be called before backward function for the final <Gate> instance
+        todo: how do we check if this method is called as the gradient default is 0
+        """
+        self.utop.gradient = gradient
 
 
 class AddGate(Gate):
@@ -80,10 +80,12 @@ class AddGate(Gate):
         self.utop = Unit(self.u0.value + self.u1.value)
         return self.utop
 
-    def backward(self):
-        self._set_utop_gradient()
-        self.u0.gradient = 1 * self.utop.gradient
-        self.u1.gradient = 1 * self.utop.gradient
+    def backward(self, overlay=False):
+        if not overlay:
+            self.u0.gradient = 0
+            self.u1.gradient = 0
+        self.u0.gradient += 1 * self.utop.gradient
+        self.u1.gradient += 1 * self.utop.gradient
 
 
 class MultiplyGate(Gate):
@@ -98,15 +100,17 @@ class MultiplyGate(Gate):
         self.utop = Unit(self.u0.value * self.u1.value)
         return self.utop
 
-    def backward(self):
+    def backward(self, overlay=False):
         """
         Use the chain rule, assume f as the final output:
         d(f)/d(u0) = d(f)/d(utop) * d(utop)/d(u0)
                    = utop.gradient * u1.value
         """
-        self._set_utop_gradient()
-        self.u0.gradient = self.u1.value * self.utop.gradient
-        self.u1.gradient = self.u0.value * self.utop.gradient
+        if not overlay:
+            self.u0.gradient = 0
+            self.u1.gradient = 0
+        self.u0.gradient += self.u1.value * self.utop.gradient
+        self.u1.gradient += self.u0.value * self.utop.gradient
 
 
 class SigmoidGate(Gate):
@@ -119,9 +123,10 @@ class SigmoidGate(Gate):
         self.utop = Unit(1 / (1 + math.exp(-self.u0.value)))
         return self.utop
 
-    def backward(self):
-        self._set_utop_gradient()
-        self.u0.gradient = self.u0.value * (1 - self.u0.value) * self.utop.gradient
+    def backward(self, overlay=False):
+        if not overlay:
+            self.u0.gradient = 0
+        self.u0.gradient += self.u0.value * (1 - self.u0.value) * self.utop.gradient
 
 
 class ReLUGate(Gate):
@@ -134,16 +139,18 @@ class ReLUGate(Gate):
         self.utop = Unit(max(0, self.u0.value))
         return self.utop
 
-    def backward(self):
+    def backward(self, overlay=False):
         """
         Here, we define the derivative at x=0 to 0
         Refer to https://www.quora.com/How-do-we-compute-the-gradient-of-a-ReLU-for-backpropagation
         """
-        self._set_utop_gradient()
+        if not overlay:
+            self.u0.gradient = 0
+
         if self.u0.value > 0:
-            self.u0.gradient = 1 * self.utop.gradient
+            self.u0.gradient += 1 * self.utop.gradient
         else:
-            self.u0.gradient = 0 * self.utop.gradient
+            self.u0.gradient += 0 * self.utop.gradient
 
 
 class Network(Gate):
@@ -159,7 +166,7 @@ class Network(Gate):
         raise NotImplementedError
 
     @abstractmethod
-    def backward(self):
+    def backward(self, overlay=False):
         raise NotImplementedError
 
     def pull_weights(self, learning_rate):
@@ -215,12 +222,11 @@ class LinearNetwork(Network):
         self.utop = self.add_gate1.forward(self.add_gate0, self.c)
         return self.utop
 
-    def backward(self):
-        self._set_utop_gradient()
-        self.add_gate1.backward()
-        self.add_gate0.backward()
-        self.multi_gate1.backward()
-        self.multi_gate0.backward()
+    def backward(self, overlay=False):
+        self.add_gate1.backward(overlay)
+        self.add_gate0.backward(overlay)
+        self.multi_gate1.backward(overlay)
+        self.multi_gate0.backward(overlay)
 
     @property
     def weights(self):
@@ -249,10 +255,9 @@ class SingleNeuralNetwork(Network):
         self.utop = self.relu_gate.forward(self.linear_network)
         return self.utop
 
-    def backward(self):
-        self._set_utop_gradient()
-        self.relu_gate.backward()
-        self.linear_network.backward()
+    def backward(self, overlay=False):
+        self.relu_gate.backward(overlay)
+        self.linear_network.backward(overlay)
 
     @property
     def weights(self):
@@ -283,11 +288,10 @@ class NeuralNetwork(Network):
         self.utop = self.linear_network.forward(self.neuro0, self.neuro1)
         return self.utop
 
-    def backward(self):
-        self._set_utop_gradient()
-        self.linear_network.backward()
-        self.neuro0.backward()
-        self.neuro1.backward()
+    def backward(self, overlay=False):
+        self.linear_network.backward(overlay)
+        self.neuro0.backward(overlay)
+        self.neuro1.backward(overlay)
 
     @property
     def weights(self):
@@ -312,7 +316,7 @@ class LossNetwork(Network):
     Where, the X_i is 1*N feature vector, f(X_i) is the output (utop.value) of given Network
     """
 
-    def __init__(self, network, data_set):
+    def __init__(self, network, data_set, alpha=0.1):
         """
         :param network: a <Network> instance
         :param data_set: a list of tuple, the first of the tuple is the feature vector, the second is the label
@@ -320,7 +324,7 @@ class LossNetwork(Network):
         super(LossNetwork, self).__init__()
         self.network = network
         self.data_set = data_set
-        self.alpha = 0.1  # Regularization strength
+        self.alpha = alpha  # Regularization strength
         feature_number = len(data_set)
         # Multiply in `−y_i*f(X_i)+1`
         self.multi_gates_l = [MultiplyGate() for _ in range(feature_number)]
@@ -362,7 +366,6 @@ class LossNetwork(Network):
         self.utop = self.add_gate_final.forward(self.add_gates_sigma_l[-1], self.multi_gate_alpha)
 
     def backward(self):
-        self._set_utop_gradient()
         self.add_gate_final.backward()
         self.multi_gate_alpha.backward()
         for gate in reversed(self.add_gates_sigma_r):
@@ -371,11 +374,13 @@ class LossNetwork(Network):
             gate.backward()
         for gate in reversed(self.add_gates_sigma_l):
             gate.backward()
+        overlay = False
         for i in reversed(range(len(self.relu_gates_l))):
             self.relu_gates_l[i].backward()
             self.add_gates_l[i].backward()
             self.multi_gates_l[i].backward()
-            self.network.backward()
+            self.network.backward(overlay=overlay)
+            overlay = True
 
     @property
     def weights(self):
@@ -426,8 +431,8 @@ class BasicClassifier(object):
         loss_network = LossNetwork(self.network, data_set)
         for _ in range(steps):
             loss_network.forward()
-            print([x.value for x in loss_network.weights_without_bias])
-            loss_network.gradient = -1
+            print(loss_network.value)
+            loss_network.set_utop_gradient(-1)
             loss_network.backward()
             loss_network.pull_weights(learning_rate)
 
@@ -458,7 +463,8 @@ if __name__ == '__main__':
     ]
     classifier = LinearClassifier()
     # classifier.simple_train(data_set)
-    classifier.train(data_set)
+    classifier.train(data_set, steps=200)
+    print('---')
     for feature, _ in data_set:
         print(classifier.predict(*feature))
     print([u.value for u in classifier.network.weights])
