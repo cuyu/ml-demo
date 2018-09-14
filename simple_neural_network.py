@@ -401,6 +401,7 @@ class BasicClassifier(object):
         :param network: A <Network> instance
         """
         self.network = network
+        self._loss_by_step = []
 
     def simple_train(self, data_set, learning_rate=0.01, steps=100):
         """
@@ -431,10 +432,16 @@ class BasicClassifier(object):
         loss_network = LossNetwork(self.network, data_set)
         for _ in range(steps):
             loss_network.forward()
-            print(loss_network.value)
+            self._loss_by_step.append(loss_network.value)
             loss_network.set_utop_gradient(-1)
             loss_network.backward()
             loss_network.pull_weights(learning_rate)
+
+    def plot_loss(self):
+        import matplotlib.pyplot as plt
+        plt.plot(self._loss_by_step)
+        plt.ylabel('loss')
+        plt.show()
 
     def predict(self, x, y):
         return self.network.forward(Unit(x), Unit(y)).value
@@ -463,8 +470,23 @@ if __name__ == '__main__':
     ]
     classifier = LinearClassifier()
     # classifier.simple_train(data_set)
-    classifier.train(data_set, steps=200)
+    classifier.train(data_set, steps=500)
+    classifier.plot_loss()
     print('---')
-    for feature, _ in data_set:
+    import matplotlib.pyplot as plt
+
+    for x in range(-30, 30):
+        for y in range(-30, 30):
+            _x = x * 0.1
+            _y = y * 0.1
+            label = classifier.predict(_x, _y)
+            color = '#a1d5ed' if label > 0 else '#efaabd'
+            plt.plot(_x, _y, color, marker='*')
+
+    for feature, label in data_set:
         print(classifier.predict(*feature))
+        color = 'b' if label > 0 else 'r'
+        plt.plot(*feature, color + 'o')
     print([u.value for u in classifier.network.weights])
+
+    plt.show()
