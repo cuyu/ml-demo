@@ -21,6 +21,8 @@ class Gate(object):
 
     def __init__(self):
         self.utop = None
+        # Will be a tuple after first forward function
+        self.units = None
 
     @property
     def value(self):
@@ -39,6 +41,9 @@ class Gate(object):
         self.utop.gradient = new_value
 
     @abstractmethod
+    def _forward(self, *units):
+        raise NotImplementedError
+
     def forward(self, *units):
         """
         :param units: <Unit> instances
@@ -49,16 +54,26 @@ class Gate(object):
         u0 --- [      ]
                [ Gate ] --- utop
         u1 --- [      ]
+
+        Note: the method should not be overrode! Override _forward method instead.
         """
-        raise NotImplementedError
+        self.units = units
+        utop = self._forward(*units)
+        return utop
 
     @abstractmethod
-    def backward(self, overlay=False):
+    def _backward(self):
+        raise NotImplementedError
+
+    def backward(self):
         """
         Run the backward process to update the gradient of each unit in the gate
-        :param overlay: set to True to overlay previous gradient, otherwise will reset and recalculate the gradient
+
+        Note: the method should not be overrode! Override _backward method instead.
         """
-        raise NotImplementedError
+        # self.units = self.units_history.pop()
+        # self.utop = self.utop_history.pop()
+        self._backward()
 
     def set_utop_gradient(self, gradient):
         """
@@ -71,86 +86,63 @@ class Gate(object):
 class AddGate(Gate):
     def __init__(self):
         super(AddGate, self).__init__()
-        self.u0 = None
-        self.u1 = None
 
-    def forward(self, u0, u1):
-        self.u0 = u0
-        self.u1 = u1
-        self.utop = Unit(self.u0.value + self.u1.value)
+    def _forward(self, u0, u1):
+        self.utop = Unit(u0.value + u1.value)
         return self.utop
 
-    def backward(self, overlay=False):
-        if not overlay:
-            self.u0.gradient = 0
-            self.u1.gradient = 0
-        self.u0.gradient += 1 * self.utop.gradient
-        self.u1.gradient += 1 * self.utop.gradient
+    def _backward(self):
+        self.units[0].gradient += 1 * self.utop.gradient
+        self.units[1].gradient += 1 * self.utop.gradient
 
 
 class MultiplyGate(Gate):
     def __init__(self):
         super(MultiplyGate, self).__init__()
-        self.u0 = None
-        self.u1 = None
 
-    def forward(self, u0, u1):
-        self.u0 = u0
-        self.u1 = u1
-        self.utop = Unit(self.u0.value * self.u1.value)
+    def _forward(self, u0, u1):
+        self.utop = Unit(self.units[0].value * self.units[1].value)
         return self.utop
 
-    def backward(self, overlay=False):
+    def _backward(self):
         """
         Use the chain rule, assume f as the final output:
         d(f)/d(u0) = d(f)/d(utop) * d(utop)/d(u0)
                    = utop.gradient * u1.value
         """
-        if not overlay:
-            self.u0.gradient = 0
-            self.u1.gradient = 0
-        self.u0.gradient += self.u1.value * self.utop.gradient
-        self.u1.gradient += self.u0.value * self.utop.gradient
+        self.units[0].gradient += self.units[1].value * self.utop.gradient
+        self.units[1].gradient += self.units[0].value * self.utop.gradient
 
 
 class SigmoidGate(Gate):
     def __init__(self):
         super(SigmoidGate, self).__init__()
-        self.u0 = None
 
-    def forward(self, u0):
-        self.u0 = u0
-        self.utop = Unit(1 / (1 + math.exp(-self.u0.value)))
+    def _forward(self, u0):
+        self.utop = Unit(1 / (1 + math.exp(-u0.value)))
         return self.utop
 
-    def backward(self, overlay=False):
-        if not overlay:
-            self.u0.gradient = 0
-        self.u0.gradient += self.u0.value * (1 - self.u0.value) * self.utop.gradient
+    def _backward(self):
+        self.units[0].gradient += self.units[0].value * (1 - self.units[0].value) * self.utop.gradient
 
 
 class ReLUGate(Gate):
     def __init__(self):
         super(ReLUGate, self).__init__()
-        self.u0 = None
 
-    def forward(self, u0):
-        self.u0 = u0
-        self.utop = Unit(max(0, self.u0.value))
+    def _forward(self, u0):
+        self.utop = Unit(max(0, self.units[0].value))
         return self.utop
 
-    def backward(self, overlay=False):
+    def _backward(self):
         """
         Here, we define the derivative at x=0 to 0
         Refer to https://www.quora.com/How-do-we-compute-the-gradient-of-a-ReLU-for-backpropagation
         """
-        if not overlay:
-            self.u0.gradient = 0
-
-        if self.u0.value > 0:
-            self.u0.gradient += 1 * self.utop.gradient
+        if self.units[0].value > 0:
+            self.units[0].gradient += 1 * self.utop.gradient
         else:
-            self.u0.gradient += 0 * self.utop.gradient
+            self.units[0].gradient += 0 * self.utop.gradient
 
 
 class Network(Gate):
@@ -160,14 +152,27 @@ class Network(Gate):
 
     def __init__(self):
         super(Network, self).__init__()
+        # Store the <Gate> instance created in forward method here, append as a tuple
+        # Note the sequence is the backward sequence
+        self._gates_history = []
+        # Store the utop corresponding to the gates above
+        self._utop_history = []
 
     @abstractmethod
-    def forward(self, *units):
+    def _forward(self, *units):
         raise NotImplementedError
 
-    @abstractmethod
-    def backward(self, overlay=False):
-        raise NotImplementedError
+    def _backward(self):
+        assert self._gates_history, "Must append the <Gate> instances created in forward to self._gates_history"
+        assert self._utop_history, "Must append the utop created in forward to self._utop_history"
+        gates = self._gates_history.pop()
+        for g in gates:
+            g.backward()
+        # Reset the utop to corresponding gates if the utop_history has >=2 items
+        # We set the utop to the last second one in history, because the last one is just current utop
+        self._utop_history.pop()
+        if self._utop_history:
+            self.utop = self._utop_history[-1]
 
     def pull_weights(self, learning_rate):
         """
@@ -176,6 +181,9 @@ class Network(Gate):
         """
         for w in self.weights:
             w.value += learning_rate * w.gradient
+        # Reset all the weights' gradient to 0
+        for w in self.weights:
+            w.gradient = 0
 
     @property
     @abstractmethod
@@ -210,23 +218,20 @@ class LinearNetwork(Network):
         self.a = Unit(1.0)
         self.b = Unit(1.0)
         self.c = Unit(1.0)
-        self.multi_gate0 = MultiplyGate()
-        self.multi_gate1 = MultiplyGate()
-        self.add_gate0 = AddGate()
-        self.add_gate1 = AddGate()
 
-    def forward(self, x, y):
-        self.multi_gate0.forward(self.a, x)
-        self.multi_gate1.forward(self.b, y)
-        self.add_gate0.forward(self.multi_gate0, self.multi_gate1)
-        self.utop = self.add_gate1.forward(self.add_gate0, self.c)
+    def _forward(self, x, y):
+        multi_gate0 = MultiplyGate()
+        multi_gate1 = MultiplyGate()
+        add_gate0 = AddGate()
+        add_gate1 = AddGate()
+        multi_gate0.forward(self.a, x)
+        multi_gate1.forward(self.b, y)
+        add_gate0.forward(multi_gate0, multi_gate1)
+        self.utop = add_gate1.forward(add_gate0, self.c)
+        # The sequence is the backward sequence
+        self._gates_history.append((add_gate1, add_gate0, multi_gate1, multi_gate0))
+        self._utop_history.append(self.utop)
         return self.utop
-
-    def backward(self, overlay=False):
-        self.add_gate1.backward(overlay)
-        self.add_gate0.backward(overlay)
-        self.multi_gate1.backward(overlay)
-        self.multi_gate0.backward(overlay)
 
     @property
     def weights(self):
@@ -248,16 +253,14 @@ class SingleNeuralNetwork(Network):
     def __init__(self):
         super(SingleNeuralNetwork, self).__init__()
         self.linear_network = LinearNetwork()
-        self.relu_gate = ReLUGate()
 
-    def forward(self, x, y):
+    def _forward(self, x, y):
+        relu_gate = ReLUGate()
         self.linear_network.forward(x, y)
-        self.utop = self.relu_gate.forward(self.linear_network)
+        self.utop = relu_gate.forward(self.linear_network)
+        self._gates_history.append((relu_gate, self.linear_network))
+        self._utop_history.append(self.utop)
         return self.utop
-
-    def backward(self, overlay=False):
-        self.relu_gate.backward(overlay)
-        self.linear_network.backward(overlay)
 
     @property
     def weights(self):
@@ -282,16 +285,13 @@ class NeuralNetwork(Network):
         self.neuro1 = SingleNeuralNetwork()
         self.linear_network = LinearNetwork()
 
-    def forward(self, x, y):
+    def _forward(self, x, y):
         self.neuro0.forward(x, y)
         self.neuro1.forward(x, y)
         self.utop = self.linear_network.forward(self.neuro0, self.neuro1)
+        self._gates_history.append((self.linear_network, self.neuro0, self.neuro1))
+        self._utop_history.append(self.utop)
         return self.utop
-
-    def backward(self, overlay=False):
-        self.linear_network.backward(overlay)
-        self.neuro0.backward(overlay)
-        self.neuro1.backward(overlay)
 
     @property
     def weights(self):
@@ -344,7 +344,7 @@ class LossNetwork(Network):
         # The final add
         self.add_gate_final = AddGate()
 
-    def forward(self):
+    def _forward(self):
         # Calculate ∑max(0,−y_i*f(X_i)+1)
         for i in range(len(self.relu_gates_l)):
             feature = self.data_set[i][0]
@@ -365,7 +365,8 @@ class LossNetwork(Network):
         self.multi_gate_alpha.forward(Unit(self.alpha), self.add_gates_sigma_r[-1])
         self.utop = self.add_gate_final.forward(self.add_gates_sigma_l[-1], self.multi_gate_alpha)
 
-    def backward(self):
+    def _backward(self):
+        # TODO: reset all the weights' gradient to 0, should also reset all other units' gradient?
         self.add_gate_final.backward()
         self.multi_gate_alpha.backward()
         for gate in reversed(self.add_gates_sigma_r):
@@ -374,13 +375,18 @@ class LossNetwork(Network):
             gate.backward()
         for gate in reversed(self.add_gates_sigma_l):
             gate.backward()
-        overlay = False
+        # df/dw_0 = 2*α*w_0 - y_i * x_i0  OR  df/dw_0 = 2*α*w_0
+        # Take the below input as example:
+        # ([-0.1, -1.0], -1),
+        # ([-1.0, 1.1], -1),
+        # Then the gradient of w_0 and w_1 for each loop backward should be:
+        # loop(i=1): 0.8, -1.3
+        # loop(i=0): 0.8 + 0.1 = 0.9, -1.3 + 1 = -0.3
         for i in reversed(range(len(self.relu_gates_l))):
             self.relu_gates_l[i].backward()
             self.add_gates_l[i].backward()
             self.multi_gates_l[i].backward()
-            self.network.backward(overlay=overlay)
-            overlay = True
+            self.network.backward()
 
     @property
     def weights(self):
@@ -468,9 +474,9 @@ if __name__ == '__main__':
         ([-1.0, 1.1], -1),
         ([2.1, -3.0], 1),
     ]
-    classifier = LinearClassifier()
+    classifier = NeuralNetworkClassifier()
     # classifier.simple_train(data_set)
-    classifier.train(data_set, steps=500)
+    classifier.train(data_set, learning_rate=0.01, steps=200)
     classifier.plot_loss()
     print('---')
     import matplotlib.pyplot as plt
