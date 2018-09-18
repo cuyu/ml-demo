@@ -44,6 +44,10 @@ class Gate(object):
 
     @abstractmethod
     def _forward(self, *units):
+        """
+        :param units: <Unit> instances
+        :return: utop, a <Unit> instance
+        """
         raise NotImplementedError
 
     def forward(self, *units):
@@ -60,13 +64,16 @@ class Gate(object):
         Note: the method should not be overrode! Override _forward method instead.
         """
         self.units = units
-        utop = self._forward(*units)
+        self.utop = self._forward(*units)
         self._units_history.append(units)
-        self._utop_history.append(utop)
-        return utop
+        self._utop_history.append(self.utop)
+        return self.utop
 
     @abstractmethod
     def _backward(self):
+        """
+        :return: None
+        """
         raise NotImplementedError
 
     def backward(self):
@@ -241,16 +248,16 @@ class LinearNetwork(Network):
         return [self.a, self.b]
 
 
-class SingleNeuralNetwork(Network):
+class Neuron(Network):
     """
-    SingleNeuralNetwork, a.k.a. a Neuro of NeuralNetwork
+    a Neuron of NeuralNetwork
     The formula is:
         f(x, y) = max(0, a * x + b * y + c)
     We can just think as it put the output of a <LinearNetwork> into a <ReLU> Gate
     """
 
     def __init__(self):
-        super(SingleNeuralNetwork, self).__init__()
+        super(Neuron, self).__init__()
         self.linear_network = LinearNetwork()
         self.relu_gate = ReLUGate()
 
@@ -272,38 +279,75 @@ class SingleNeuralNetwork(Network):
         return self.linear_network.weights_without_bias
 
 
-class NeuralNetwork(Network):
+class SingleLayerNeuralNetwork(Network):
     """
-    A neural network consist of two <SingleNeuralNetwork>
+    A neural network with only output layer which consist of two <Neuron>:
+    x - neuron1
+      X        > f(x, y)
+    y - neuron2
+
     The formula is:
         f(x, y) = a1 * n1 + a2 * n2 + d
-    where n1, n2 is the output of <SingleNeuralNetwork>, just as simple as apply the LinearNetwork to the <SingleNeuralNetwork>
+    where n1, n2 is the output of <Neuron>, just as simple as apply the LinearNetwork to the <Neuron>
     """
 
     def __init__(self):
-        super(NeuralNetwork, self).__init__()
-        self.neuro0 = SingleNeuralNetwork()
-        self.neuro1 = SingleNeuralNetwork()
+        super(SingleLayerNeuralNetwork, self).__init__()
+        self.neuron0 = Neuron()
+        self.neuron1 = Neuron()
         self.linear_network = LinearNetwork()
 
     def _forward(self, x, y):
-        self.neuro0.forward(x, y)
-        self.neuro1.forward(x, y)
-        self.utop = self.linear_network.forward(self.neuro0, self.neuro1)
+        self.neuron0.forward(x, y)
+        self.neuron1.forward(x, y)
+        self.utop = self.linear_network.forward(self.neuron0, self.neuron1)
         return self.utop
 
     def _backward(self):
         self.linear_network.backward()
-        self.neuro0.backward()
-        self.neuro1.backward()
+        self.neuron0.backward()
+        self.neuron1.backward()
 
     @property
     def weights(self):
-        return self.neuro0.weights + self.neuro1.weights + self.linear_network.weights
+        return self.neuron0.weights + self.neuron1.weights + self.linear_network.weights
 
     @property
     def weights_without_bias(self):
-        return self.neuro0.weights_without_bias + self.neuro1.weights_without_bias + self.linear_network.weights_without_bias
+        return self.neuron0.weights_without_bias + self.neuron1.weights_without_bias + self.linear_network.weights_without_bias
+
+
+class NeuralNetwork(Network):
+    """
+    A neural network with one hidden layer and one output layer:
+    x - n1 - n3
+      X    X    > f(x, y)
+    y - n2 - n4
+
+    Where, the n1, n2 are <Neuron> in hidden layer, n3, n4 are <Neuron> in output layer, x, y are inputs
+    """
+
+    def __init__(self):
+        super(NeuralNetwork, self).__init__()
+        self.hidden_layer = SingleLayerNeuralNetwork()
+        self.output_layer = SingleLayerNeuralNetwork()
+
+    def _forward(self, x, y):
+        self.hidden_layer.forward(x, y)
+        utop = self.output_layer.forward(self.hidden_layer.neuron0, self.hidden_layer.neuron1)
+        return utop
+
+    def _backward(self):
+        self.output_layer.backward()
+        self.hidden_layer.backward()
+
+    @property
+    def weights(self):
+        return self.hidden_layer.weights + self.output_layer.weights
+
+    @property
+    def weights_without_bias(self):
+        return self.hidden_layer.weights_without_bias + self.output_layer.weights_without_bias
 
 
 class LossNetwork(Network):
@@ -367,7 +411,8 @@ class LossNetwork(Network):
         for i in range(1, len(self.add_gates_sigma_r)):
             self.add_gates_sigma_r[i].forward(self.add_gates_sigma_r[i - 1], self.multi_gates_r[i + 1])
         self.multi_gate_alpha.forward(Unit(self.alpha), self.add_gates_sigma_r[-1])
-        self.utop = self.add_gate_final.forward(self.add_gates_sigma_l[-1], self.multi_gate_alpha)
+        utop = self.add_gate_final.forward(self.add_gates_sigma_l[-1], self.multi_gate_alpha)
+        return utop
 
     def _backward(self):
         self.add_gate_final.backward()
@@ -430,7 +475,7 @@ class BasicClassifier(object):
                     pull = 0
                 # Set the gradient of final unit and then backward to get the direction (gradient) of corresponding parameters
                 # We can also set the pull (i.e. gradient) more/less than 1 to make the adjust more efficient
-                self.network.gradient = pull
+                self.network.set_utop_gradient(pull)
                 self.network.backward()
                 self.network.pull_weights(learning_rate)
 
@@ -477,7 +522,7 @@ if __name__ == '__main__':
         ([-1.0, 1.1], -1),
         ([2.1, -3.0], 1),
     ]
-    classifier = LinearClassifier()
+    classifier = NeuralNetworkClassifier()
     # classifier.simple_train(data_set)
     classifier.train(data_set, learning_rate=0.01, steps=200)
     classifier.plot_loss()
