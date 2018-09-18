@@ -77,6 +77,8 @@ class Gate(object):
         """
         self.units = self._units_history.pop()
         self._backward()
+        # We must set the utop to previous state immediately, because the utop could be other gate's input unit
+        # And other gate's backward could be called before this gate's backward
         self._utop_history.pop()
         if self._utop_history:
             self.utop = self._utop_history[-1]
@@ -175,6 +177,8 @@ class Network(Gate):
         for w in self.weights:
             w.value += learning_rate * w.gradient
         # Reset all the weights' gradient to 0
+        # We will not reset all other units' gradient, because all other units should be initialized in next training
+        # round, and the init value of gradient is 0
         for w in self.weights:
             w.gradient = 0
 
@@ -366,7 +370,6 @@ class LossNetwork(Network):
         self.utop = self.add_gate_final.forward(self.add_gates_sigma_l[-1], self.multi_gate_alpha)
 
     def _backward(self):
-        # TODO: reset all the weights' gradient to 0, should also reset all other units' gradient?
         self.add_gate_final.backward()
         self.multi_gate_alpha.backward()
         for gate in reversed(self.add_gates_sigma_r):
