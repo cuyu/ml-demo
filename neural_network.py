@@ -208,40 +208,46 @@ class Network(Gate):
 
 class LinearNetwork(Network):
     """
-    A LinearNetwork: it takes 5 Units (x,y,a,b,c) and outputs a single Unit:
-        f(x, y) = a * x + b * y + c
-    So we need two MultiplyGate and one AddGate here
-    From outside of the network, we can assume the whole network as a gate, which has 5 inputs and 1 output
-    So we inherit the <Gate> class here
+    A LinearNetwork:
+        f(X) = ∑w_i * x_i + c
+    Where, X is the input vector, x_i is one dimension of X, w_i is the weight for each x_i, c is a constant
+
+    So we need n MultiplyGate (n is the feature length) and one AddGate here
     """
 
     def __init__(self):
         super(LinearNetwork, self).__init__()
-        self.a = Unit(1.0)
-        self.b = Unit(1.0)
+        # A list of <Unit> instance, should be init the first time _forward is called
+        self.W = []
         self.c = Unit(1.0)
-        self.multi_gate0 = MultiplyGate()
-        self.multi_gate1 = MultiplyGate()
-        self.add_gate0 = AddGate()
+        # A list of <MultiplyGate> instance, should be init the first time _forward is called
+        self.multi_gates = []
+        self.add_gate = AddGate()
 
-    def _forward(self, x, y):
-        self.multi_gate0.forward(self.a, x)
-        self.multi_gate1.forward(self.b, y)
-        utop = self.add_gate0.forward(self.multi_gate0, self.multi_gate1, self.c)
+    def _forward(self, *units):
+        # The first time _forward is called
+        if len(self.W) == 0:
+            self.W = [Unit(1.0) for _ in range(len(units))]
+            self.multi_gates = [MultiplyGate() for _ in range(len(units))]
+
+        for i in range(len(units)):
+            self.multi_gates[i].forward(self.W[i], units[i])
+
+        utop = self.add_gate.forward(*self.multi_gates, self.c)
         return utop
 
     def _backward(self):
-        self.add_gate0.backward()
-        self.multi_gate1.backward()
-        self.multi_gate0.backward()
+        self.add_gate.backward()
+        for gate in reversed(self.multi_gates):
+            gate.backward()
 
     @property
     def weights(self):
-        return [self.a, self.b, self.c]
+        return self.W + [self.c]
 
     @property
     def weights_without_bias(self):
-        return [self.a, self.b]
+        return self.W
 
 
 class Neuron(Network):
@@ -505,7 +511,7 @@ class NeuralNetworkClassifier(BasicClassifier):
 
 if __name__ == '__main__':
     data_set = [
-        ([1.2, 0.7], 1),
+        # ([1.2, 0.7], 1),
         ([-0.3, -0.5], -1),
         ([3.0, 0.1], 1),
         ([-0.1, -1.0], -1),
