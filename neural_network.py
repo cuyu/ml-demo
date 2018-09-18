@@ -215,24 +215,19 @@ class LinearNetwork(Network):
     So we need n MultiplyGate (n is the feature length) and one AddGate here
     """
 
-    def __init__(self):
+    def __init__(self, feature_length):
+        """
+        :param feature_length: dimension number of the feature
+        """
         super(LinearNetwork, self).__init__()
-        # A list of <Unit> instance, should be init the first time _forward is called
-        self.W = []
+        self.W = [Unit(1.0) for _ in range(feature_length)]
         self.c = Unit(1.0)
-        # A list of <MultiplyGate> instance, should be init the first time _forward is called
-        self.multi_gates = []
+        self.multi_gates = [MultiplyGate() for _ in range(feature_length)]
         self.add_gate = AddGate()
 
     def _forward(self, *units):
-        # The first time _forward is called
-        if len(self.W) == 0:
-            self.W = [Unit(1.0) for _ in range(len(units))]
-            self.multi_gates = [MultiplyGate() for _ in range(len(units))]
-
         for i in range(len(units)):
             self.multi_gates[i].forward(self.W[i], units[i])
-
         utop = self.add_gate.forward(*self.multi_gates, self.c)
         return utop
 
@@ -498,8 +493,8 @@ class BasicClassifier(object):
 
 
 class LinearClassifier(BasicClassifier):
-    def __init__(self):
-        network = LinearNetwork()
+    def __init__(self, feature_length):
+        network = LinearNetwork(feature_length)
         super(LinearClassifier, self).__init__(network)
 
 
@@ -518,7 +513,7 @@ if __name__ == '__main__':
         ([-1.0, 1.1], -1),
         # ([2.1, -3.0], 1),
     ]
-    classifier = LinearClassifier()
+    classifier = LinearClassifier(feature_length=2)
     # classifier.simple_train(data_set)
     classifier.train(data_set, learning_rate=0.01, steps=200)
     classifier.plot_loss()
