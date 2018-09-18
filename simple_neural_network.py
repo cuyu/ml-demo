@@ -23,6 +23,8 @@ class Gate(object):
         self.utop = None
         # Will be a tuple after first forward function
         self.units = None
+        self._units_history = []
+        self._utop_history = []
 
     @property
     def value(self):
@@ -59,6 +61,8 @@ class Gate(object):
         """
         self.units = units
         utop = self._forward(*units)
+        self._units_history.append(units)
+        self._utop_history.append(utop)
         return utop
 
     @abstractmethod
@@ -71,9 +75,11 @@ class Gate(object):
 
         Note: the method should not be overrode! Override _backward method instead.
         """
-        # self.units = self.units_history.pop()
-        # self.utop = self.utop_history.pop()
+        self.units = self._units_history.pop()
         self._backward()
+        self._utop_history.pop()
+        if self._utop_history:
+            self.utop = self._utop_history[-1]
 
     def set_utop_gradient(self, gradient):
         """
@@ -152,27 +158,14 @@ class Network(Gate):
 
     def __init__(self):
         super(Network, self).__init__()
-        # Store the <Gate> instance created in forward method here, append as a tuple
-        # Note the sequence is the backward sequence
-        self._gates_history = []
-        # Store the utop corresponding to the gates above
-        self._utop_history = []
 
     @abstractmethod
     def _forward(self, *units):
         raise NotImplementedError
 
+    @abstractmethod
     def _backward(self):
-        assert self._gates_history, "Must append the <Gate> instances created in forward to self._gates_history"
-        assert self._utop_history, "Must append the utop created in forward to self._utop_history"
-        gates = self._gates_history.pop()
-        for g in gates:
-            g.backward()
-        # Reset the utop to corresponding gates if the utop_history has >=2 items
-        # We set the utop to the last second one in history, because the last one is just current utop
-        self._utop_history.pop()
-        if self._utop_history:
-            self.utop = self._utop_history[-1]
+        raise NotImplementedError
 
     def pull_weights(self, learning_rate):
         """
@@ -208,7 +201,6 @@ class LinearNetwork(Network):
     A LinearNetwork: it takes 5 Units (x,y,a,b,c) and outputs a single Unit:
         f(x, y) = a * x + b * y + c
     So we need two MultiplyGate and two AddGate here
-
     From outside of the network, we can assume the whole network as a gate, which has 5 inputs and 1 output
     So we inherit the <Gate> class here
     """
@@ -218,20 +210,23 @@ class LinearNetwork(Network):
         self.a = Unit(1.0)
         self.b = Unit(1.0)
         self.c = Unit(1.0)
+        self.multi_gate0 = MultiplyGate()
+        self.multi_gate1 = MultiplyGate()
+        self.add_gate0 = AddGate()
+        self.add_gate1 = AddGate()
 
     def _forward(self, x, y):
-        multi_gate0 = MultiplyGate()
-        multi_gate1 = MultiplyGate()
-        add_gate0 = AddGate()
-        add_gate1 = AddGate()
-        multi_gate0.forward(self.a, x)
-        multi_gate1.forward(self.b, y)
-        add_gate0.forward(multi_gate0, multi_gate1)
-        self.utop = add_gate1.forward(add_gate0, self.c)
-        # The sequence is the backward sequence
-        self._gates_history.append((add_gate1, add_gate0, multi_gate1, multi_gate0))
-        self._utop_history.append(self.utop)
+        self.multi_gate0.forward(self.a, x)
+        self.multi_gate1.forward(self.b, y)
+        self.add_gate0.forward(self.multi_gate0, self.multi_gate1)
+        self.utop = self.add_gate1.forward(self.add_gate0, self.c)
         return self.utop
+
+    def _backward(self):
+        self.add_gate1.backward()
+        self.add_gate0.backward()
+        self.multi_gate1.backward()
+        self.multi_gate0.backward()
 
     @property
     def weights(self):
@@ -253,14 +248,16 @@ class SingleNeuralNetwork(Network):
     def __init__(self):
         super(SingleNeuralNetwork, self).__init__()
         self.linear_network = LinearNetwork()
+        self.relu_gate = ReLUGate()
 
     def _forward(self, x, y):
-        relu_gate = ReLUGate()
         self.linear_network.forward(x, y)
-        self.utop = relu_gate.forward(self.linear_network)
-        self._gates_history.append((relu_gate, self.linear_network))
-        self._utop_history.append(self.utop)
+        self.utop = self.relu_gate.forward(self.linear_network)
         return self.utop
+
+    def _backward(self):
+        self.relu_gate.backward()
+        self.linear_network.backward()
 
     @property
     def weights(self):
@@ -289,9 +286,12 @@ class NeuralNetwork(Network):
         self.neuro0.forward(x, y)
         self.neuro1.forward(x, y)
         self.utop = self.linear_network.forward(self.neuro0, self.neuro1)
-        self._gates_history.append((self.linear_network, self.neuro0, self.neuro1))
-        self._utop_history.append(self.utop)
         return self.utop
+
+    def _backward(self):
+        self.linear_network.backward()
+        self.neuro0.backward()
+        self.neuro1.backward()
 
     @property
     def weights(self):
@@ -474,7 +474,7 @@ if __name__ == '__main__':
         ([-1.0, 1.1], -1),
         ([2.1, -3.0], 1),
     ]
-    classifier = NeuralNetworkClassifier()
+    classifier = LinearClassifier()
     # classifier.simple_train(data_set)
     classifier.train(data_set, learning_rate=0.01, steps=200)
     classifier.plot_loss()
