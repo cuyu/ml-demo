@@ -220,6 +220,7 @@ class LinearNetwork(Network):
         :param feature_length: dimension number of the feature
         """
         super(LinearNetwork, self).__init__()
+        self.feature_length = feature_length
         self.W = [Unit(1.0) for _ in range(feature_length)]
         self.c = Unit(1.0)
         self.multi_gates = [MultiplyGate() for _ in range(feature_length)]
@@ -290,8 +291,10 @@ class SingleLayerNeuralNetwork(Network):
 
     def __init__(self, feature_length, neuron_number):
         super(SingleLayerNeuralNetwork, self).__init__()
+        self.feature_length = feature_length
+        self.neuron_number = neuron_number
         self.neurons = [Neuron(feature_length) for _ in range(neuron_number)]
-        self.linear_network = LinearNetwork(feature_length)
+        self.linear_network = LinearNetwork(neuron_number)
 
     def _forward(self, *units):
         for n in self.neurons:
@@ -535,9 +538,9 @@ if __name__ == '__main__':
         ([3.0, 0.1], 1),
         ([-0.1, -1.0], -1),
         ([-1.0, 1.1], -1),
-        # ([2.1, -3.0], 1),
+        ([2.1, -3.0], 1),
     ]
-    classifier = NeuralNetworkClassifier(feature_length=2, network_structure=[2])
+    classifier = NeuralNetworkClassifier(feature_length=2, network_structure=[4, 8, 4])
     # classifier.simple_train(data_set)
     classifier.train(data_set, learning_rate=0.01, steps=200)
     classifier.plot_loss()
