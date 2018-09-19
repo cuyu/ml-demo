@@ -69,6 +69,10 @@ class Gate(object):
         self._utop_history.append(self.utop)
         return self.utop
 
+    def clean_history(self):
+        self._units_history = []
+        self._utop_history = []
+
     @abstractmethod
     def _backward(self):
         """
@@ -354,7 +358,7 @@ class NeuralNetwork(Network):
         assert len(units) == self.feature_length, "The input feature dimension should be consistent!"
         utop = self.layers[0].forward(*units)
         for i in range(1, len(self.layers)):
-            utop = self.layers[i].forward(*self.layers[i-1].neurons)
+            utop = self.layers[i].forward(*self.layers[i - 1].neurons)
         return utop
 
     def _backward(self):
@@ -521,7 +525,10 @@ class BasicClassifier(object):
         """
         :param feature: A list of number
         """
-        return self.network.forward(*[Unit(i) for i in feature]).value
+        predicted = self.network.forward(*[Unit(i) for i in feature]).value
+        # Prevent memory leak
+        self.network.clean_history()
+        return predicted
 
 
 class LinearClassifier(BasicClassifier):
@@ -545,7 +552,7 @@ if __name__ == '__main__':
         ([-1.0, 1.1], -1),
         ([2.1, -3.0], 1),
     ]
-    classifier = NeuralNetworkClassifier(feature_length=2, network_structure=[4, 8, 4])
+    classifier = NeuralNetworkClassifier(feature_length=2, network_structure=[4, 8])
     # classifier.simple_train(data_set)
     classifier.train(data_set, learning_rate=0.01, steps=200)
     classifier.plot_loss()
