@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Implement a neural network, using modular.
-Support input features have >2 dimensions
+Support input features with arbitrary dimensions
 """
 from abc import abstractmethod
 import math
@@ -227,6 +227,7 @@ class LinearNetwork(Network):
         self.add_gate = AddGate()
 
     def _forward(self, *units):
+        assert len(units) == self.feature_length, "The input feature dimension should be consistent!"
         for i in range(len(units)):
             self.multi_gates[i].forward(self.W[i], units[i])
         utop = self.add_gate.forward(*self.multi_gates, self.c)
@@ -297,6 +298,7 @@ class SingleLayerNeuralNetwork(Network):
         self.linear_network = LinearNetwork(neuron_number)
 
     def _forward(self, *units):
+        assert len(units) == self.feature_length, "The input feature dimension should be consistent!"
         for n in self.neurons:
             n.forward(*units)
         self.utop = self.linear_network.forward(*self.neurons)
@@ -339,6 +341,8 @@ class NeuralNetwork(Network):
         e.g. [4, 8, 16] means two hidden layers which has 4 and 8 neurons for each, and one output layer with 16 neurons
         """
         super(NeuralNetwork, self).__init__()
+        self.feature_length = feature_length
+        self.network_structure = network_structure
         # The first layer's feature length is the actual feature length
         self.layers = [SingleLayerNeuralNetwork(feature_length=feature_length, neuron_number=network_structure[0])]
         # The other layer's feature length is the neuron number of its former layer
@@ -347,6 +351,7 @@ class NeuralNetwork(Network):
                 SingleLayerNeuralNetwork(feature_length=network_structure[i - 1], neuron_number=network_structure[i]))
 
     def _forward(self, *units):
+        assert len(units) == self.feature_length, "The input feature dimension should be consistent!"
         utop = self.layers[0].forward(*units)
         for i in range(1, len(self.layers)):
             utop = self.layers[i].forward(*self.layers[i-1].neurons)
