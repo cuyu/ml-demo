@@ -248,18 +248,18 @@ class LinearNetwork(Network):
 class Neuron(Network):
     """
     a Neuron of NeuralNetwork
-    The formula is:
+    For input (x, y), the formula is:
         f(x, y) = max(0, a * x + b * y + c)
     We can just think as it put the output of a <LinearNetwork> into a <ReLU> Gate
     """
 
-    def __init__(self):
+    def __init__(self, feature_length):
         super(Neuron, self).__init__()
-        self.linear_network = LinearNetwork()
+        self.linear_network = LinearNetwork(feature_length)
         self.relu_gate = ReLUGate()
 
-    def _forward(self, x, y):
-        self.linear_network.forward(x, y)
+    def _forward(self, *units):
+        self.linear_network.forward(*units)
         self.utop = self.relu_gate.forward(self.linear_network)
         return self.utop
 
@@ -288,30 +288,35 @@ class SingleLayerNeuralNetwork(Network):
     where n1, n2 is the output of <Neuron>, just as simple as apply the LinearNetwork to the <Neuron>
     """
 
-    def __init__(self):
+    def __init__(self, feature_length, neuron_number):
         super(SingleLayerNeuralNetwork, self).__init__()
-        self.neuron0 = Neuron()
-        self.neuron1 = Neuron()
-        self.linear_network = LinearNetwork()
+        self.neurons = [Neuron(feature_length) for _ in range(neuron_number)]
+        self.linear_network = LinearNetwork(feature_length)
 
-    def _forward(self, x, y):
-        self.neuron0.forward(x, y)
-        self.neuron1.forward(x, y)
-        self.utop = self.linear_network.forward(self.neuron0, self.neuron1)
+    def _forward(self, *units):
+        for n in self.neurons:
+            n.forward(*units)
+        self.utop = self.linear_network.forward(*self.neurons)
         return self.utop
 
     def _backward(self):
         self.linear_network.backward()
-        self.neuron0.backward()
-        self.neuron1.backward()
+        for n in reversed(self.neurons):
+            n.backward()
 
     @property
     def weights(self):
-        return self.neuron0.weights + self.neuron1.weights + self.linear_network.weights
+        w = []
+        for n in self.neurons:
+            w += n.weights
+        return w + self.linear_network.weights
 
     @property
     def weights_without_bias(self):
-        return self.neuron0.weights_without_bias + self.neuron1.weights_without_bias + self.linear_network.weights_without_bias
+        w = []
+        for n in self.neurons:
+            w += n.weights_without_bias
+        return w + self.linear_network.weights_without_bias
 
 
 class NeuralNetwork(Network):
@@ -324,27 +329,43 @@ class NeuralNetwork(Network):
     Where, the n1, n2 are <Neuron> in hidden layer, n3, n4 are <Neuron> in output layer, x, y are inputs
     """
 
-    def __init__(self):
+    def __init__(self, feature_length, network_structure):
+        """
+        :param feature_length: a Int number
+        :param network_structure: a list, where each number means the neurons number for each layer.
+        e.g. [4, 8, 16] means two hidden layers which has 4 and 8 neurons for each, and one output layer with 16 neurons
+        """
         super(NeuralNetwork, self).__init__()
-        self.hidden_layer = SingleLayerNeuralNetwork()
-        self.output_layer = SingleLayerNeuralNetwork()
+        # The first layer's feature length is the actual feature length
+        self.layers = [SingleLayerNeuralNetwork(feature_length=feature_length, neuron_number=network_structure[0])]
+        # The other layer's feature length is the neuron number of its former layer
+        for i in range(1, len(network_structure)):
+            self.layers.append(
+                SingleLayerNeuralNetwork(feature_length=network_structure[i - 1], neuron_number=network_structure[i]))
 
-    def _forward(self, x, y):
-        self.hidden_layer.forward(x, y)
-        utop = self.output_layer.forward(self.hidden_layer.neuron0, self.hidden_layer.neuron1)
+    def _forward(self, *units):
+        utop = self.layers[0].forward(*units)
+        for i in range(1, len(self.layers)):
+            utop = self.layers[i].forward(*self.layers[i-1].neurons)
         return utop
 
     def _backward(self):
-        self.output_layer.backward()
-        self.hidden_layer.backward()
+        for layer in reversed(self.layers):
+            layer.backward()
 
     @property
     def weights(self):
-        return self.hidden_layer.weights + self.output_layer.weights
+        w = []
+        for layer in self.layers:
+            w += layer.weights
+        return w
 
     @property
     def weights_without_bias(self):
-        return self.hidden_layer.weights_without_bias + self.output_layer.weights_without_bias
+        w = []
+        for layer in self.layers:
+            w += layer.weights_without_bias
+        return w
 
 
 class LossNetwork(Network):
@@ -488,8 +509,11 @@ class BasicClassifier(object):
         plt.ylabel('loss')
         plt.show()
 
-    def predict(self, x, y):
-        return self.network.forward(Unit(x), Unit(y)).value
+    def predict(self, feature):
+        """
+        :param feature: A list of number
+        """
+        return self.network.forward(*[Unit(i) for i in feature]).value
 
 
 class LinearClassifier(BasicClassifier):
@@ -499,21 +523,21 @@ class LinearClassifier(BasicClassifier):
 
 
 class NeuralNetworkClassifier(BasicClassifier):
-    def __init__(self):
-        network = NeuralNetwork()
+    def __init__(self, feature_length, network_structure):
+        network = NeuralNetwork(feature_length, network_structure)
         super(NeuralNetworkClassifier, self).__init__(network)
 
 
 if __name__ == '__main__':
     data_set = [
-        # ([1.2, 0.7], 1),
+        ([1.2, 0.7], 1),
         ([-0.3, -0.5], -1),
         ([3.0, 0.1], 1),
         ([-0.1, -1.0], -1),
         ([-1.0, 1.1], -1),
         # ([2.1, -3.0], 1),
     ]
-    classifier = LinearClassifier(feature_length=2)
+    classifier = NeuralNetworkClassifier(feature_length=2, network_structure=[2])
     # classifier.simple_train(data_set)
     classifier.train(data_set, learning_rate=0.01, steps=200)
     classifier.plot_loss()
@@ -524,12 +548,12 @@ if __name__ == '__main__':
         for y in range(-30, 30):
             _x = x * 0.1
             _y = y * 0.1
-            label = classifier.predict(_x, _y)
+            label = classifier.predict([_x, _y])
             color = '#a1d5ed' if label > 0 else '#efaabd'
             plt.plot(_x, _y, color, marker='*')
 
     for feature, label in data_set:
-        print(classifier.predict(*feature))
+        print(classifier.predict(feature))
         color = 'b' if label > 0 else 'r'
         plt.plot(*feature, color + 'o')
     print([u.value for u in classifier.network.weights])
