@@ -2,7 +2,15 @@
 # -*- coding: utf-8 -*-
 """
 Implement a neural network, using modular.
-Support input features with arbitrary dimensions
+Support input features with arbitrary dimensions.
+
+Something that not covered here:
+1. We hard code the activation function here using ReLU, but there're many other ones can be chosen. For example,
+   sigmoid function. And we do not consider dying ReLu problem here.
+   (Refer to https://medium.com/the-theory-of-everything/understanding-activation-functions-in-neural-networks-9491262884e0)
+2. We set the learning rate as a constant value for all the rounds of training process. However, there're many modern
+   methods to adjust learning rate dynamically so that we can train the model more efficiently.
+   (Refer to https://medium.com/@gauravksinghCS/adaptive-learning-rate-methods-e6e00dcbae5e)
 """
 import random
 from abc import abstractmethod
