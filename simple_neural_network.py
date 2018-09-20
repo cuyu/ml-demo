@@ -219,7 +219,7 @@ class LinearNetwork(Network):
     def __init__(self):
         super(LinearNetwork, self).__init__()
         self.a = Unit(1.0)
-        self.b = Unit(1.0)
+        self.b = Unit(2.0)
         self.c = Unit(1.0)
         self.multi_gate0 = MultiplyGate()
         self.multi_gate1 = MultiplyGate()
@@ -517,6 +517,7 @@ def whats_neural_network_looks_like():
     """
     The above neural network actually is not linear, it is a polyline
     If we have enough Neurons, it will look like a smooth curve
+    Also refer https://stats.stackexchange.com/questions/222639/what-makes-neural-networks-a-nonlinear-classification-model
     """
     import matplotlib.pyplot as plt
 

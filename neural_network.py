@@ -4,6 +4,7 @@
 Implement a neural network, using modular.
 Support input features with arbitrary dimensions
 """
+import random
 from abc import abstractmethod
 import math
 
@@ -225,7 +226,10 @@ class LinearNetwork(Network):
         """
         super(LinearNetwork, self).__init__()
         self.feature_length = feature_length
-        self.W = [Unit(1.0) for _ in range(feature_length)]
+        # [Note]: we should use different init values for weights here
+        # If we use the same init values (e.g. 1.0), then all the Neurons will be all the same no matter how many rounds
+        # we trained (For each round, the output of each neuron will be same, so the gradient will be same too)
+        self.W = [Unit(random.random()) for _ in range(feature_length)]
         self.c = Unit(1.0)
         self.multi_gates = [MultiplyGate() for _ in range(feature_length)]
         self.add_gate = AddGate()
@@ -545,13 +549,23 @@ class NeuralNetworkClassifier(BasicClassifier):
 
 if __name__ == '__main__':
     data_set = [
-        ([1.2, 0.7], 1),
+        ([1.2, 0.7], -1),
         ([-0.3, -0.5], -1),
         ([3.0, 0.1], 1),
         ([-0.1, -1.0], -1),
         ([-1.0, 1.1], -1),
         ([2.1, -3.0], 1),
+        ([1.1, -1.0], 1),
     ]
+    # data_set = [
+    #     ([1.2], 1),
+    #     ([-0.3], -1),
+    #     ([2.1], 1),
+    #     ([-1.0], -1),
+    #     ([0.8], -1),
+    #     ([-3.0], 1),
+    #     ([-2.0], 1),
+    # ]
     classifier = NeuralNetworkClassifier(feature_length=2, network_structure=[4, 8])
     # classifier.simple_train(data_set)
     classifier.train(data_set, learning_rate=0.01, steps=200)
