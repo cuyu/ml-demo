@@ -513,6 +513,31 @@ class NeuralNetworkClassifier(BasicClassifier):
         super(NeuralNetworkClassifier, self).__init__(network)
 
 
+def whats_neural_network_looks_like():
+    """
+    The above neural network actually is not linear, it is a polyline
+    If we have enough Neurons, it will look like a smooth curve
+    """
+    import matplotlib.pyplot as plt
+
+    # Say we have 3 neurons with only 1-D input like below
+    # max(0, 3 * x - 7) + max(0, 2 * x - 2) - max(0, -x - 1)
+    def f(x):
+        if x > 5:
+            return 3 * x - 7
+        elif x > 1:
+            return 2 * x - 2
+        elif x < -1:
+            return -(-x + 1)
+        else:
+            return 0
+
+    for i in range(-100, 100):
+        i = i / 10
+        plt.plot(i, f(i), 'bo')
+    plt.show()
+
+
 if __name__ == '__main__':
     data_set = [
         ([1.2, 0.7], 1),
