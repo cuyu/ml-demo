@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Implement a neural network, using modular.
-Support input features with arbitrary dimensions.
+Support input/output with arbitrary dimensions.
 
 Something that may not be covered here:
 1. We hard code the activation function here using ReLU, but there're many other ones can be chosen. For example,
@@ -13,10 +13,13 @@ Something that may not be covered here:
    (Refer to https://medium.com/@gauravksinghCS/adaptive-learning-rate-methods-e6e00dcbae5e)
 3. We hard code to use Hinge Loss for the loss network. There are many other loss functions can be chosen.
    (Refer to https://isaacchanghau.github.io/post/loss_functions/)
-4. For linear classifier, We only implement a binary classifier here. For multiple-classes classification, you can use
+4. For linear classifier, We only implement a binary classifier here. For multi-classes classification, you can use
    multiple binary classifiers, or use neural network classifier with multiple output Neurons in the output layer.
    For example, if you have two output Neurons, then [-1, -1] can represent class A, [-1, 1] is class B,
    [1, -1] is class C and [1, 1] is class D. Thus it can be used as a 4-classes classifier.
+   Or, you can define each Neuron in output layer represent the probability of one class. Assume you have 3 classes,
+   then you just label [1, -1, -1] as class A, [-1, 1, -1] as class B and [-1, -1, 1] as class C. (in this case,
+   the loss function may need to change, refer to https://www.depends-on-the-definition.com/guide-to-multi-label-classification-with-neural-networks/)
 """
 import random
 from abc import abstractmethod
@@ -31,13 +34,13 @@ class Unit(object):
 
 class Gate(object):
     """
-    The base class of all gates
+    The base class of all gates (which has multiple inputs but only one output)
     """
 
     def __init__(self):
-        # Will be a tuple after first forward function
+        # Will be a <Unit> instance after first forward function
         self.utop = None
-        # Will be a tuple after first forward function
+        # Will be a tuple of <Unit> instances after first forward function
         self.units = None
         self._units_history = []
         self._utop_history = []
@@ -187,6 +190,7 @@ class Network(Gate):
 
     def __init__(self):
         super(Network, self).__init__()
+        self._outputs = None
 
     @abstractmethod
     def _forward(self, *units):
@@ -208,6 +212,14 @@ class Network(Gate):
         # round, and the init value of gradient is 0
         for w in self.weights:
             w.gradient = 0
+
+    @property
+    def outputs(self):
+        """
+        Return the output of the network in a list
+        Must set the `_outputs` property if the network has multiple output <Unit>
+        """
+        return self._outputs if self._outputs else [self.utop]
 
     @property
     @abstractmethod
@@ -304,14 +316,10 @@ class Neuron(Network):
 
 class SingleLayerNeuralNetwork(Network):
     """
-    A neural network with only output layer which consist of two <Neuron>:
+    An example of  neural network with only output layer which consist of two <Neuron>:
     x - neuron1
-      X        > f(x, y)
+      X
     y - neuron2
-
-    The formula is:
-        f(x, y) = a1 * n1 + a2 * n2 + d
-    where n1, n2 is the output of <Neuron>, just as simple as apply the LinearNetwork to the <Neuron>
     """
 
     def __init__(self, feature_length, neuron_number):
@@ -324,19 +332,34 @@ class SingleLayerNeuralNetwork(Network):
         assert len(units) == self.feature_length, "The input feature dimension should be consistent!"
         for n in self.neurons:
             n.forward(*units)
-        return (n.utop for n in self.neurons)
 
     def _backward(self):
         for n in reversed(self.neurons):
             n.backward()
 
     @property
+    def value(self):
+        raise ValueError("It is meaningless for a layer to have a value cause there may be multiple outputs."
+                         "Loop using the `output_neurons` property instead")
+
+    @property
+    def gradient(self):
+        raise ValueError("It is meaningless for a layer to have a gradient cause there may be multiple outputs."
+                         "Loop using the `output_neurons` property instead")
+
+    @property
     def weights(self):
-        return [n.weights for n in self.neurons]
+        w = []
+        for n in self.neurons:
+            w += n.weights
+        return w
 
     @property
     def weights_without_bias(self):
-        return [n.weights_without_bias for n in self.neurons]
+        w = []
+        for n in self.neurons:
+            w += n.weights_without_bias
+        return w
 
 
 class NeuralNetwork(Network):
@@ -366,12 +389,24 @@ class NeuralNetwork(Network):
             self.layers.append(
                 SingleLayerNeuralNetwork(feature_length=network_structure[i - 1], neuron_number=network_structure[i]))
 
+        self._outputs = self.layers[-1].neurons
+
     def _forward(self, *units):
         assert len(units) == self.feature_length, "The input feature dimension should be consistent!"
-        utop = self.layers[0].forward(*units)
+        self.layers[0].forward(*units)
         for i in range(1, len(self.layers)):
-            utop = self.layers[i].forward(*self.layers[i - 1].neurons)
-        return utop
+            self.layers[i].forward(*self.layers[i - 1].neurons)
+
+    @property
+    def value(self):
+        raise ValueError("It is meaningless for a neural network to have a value cause there may be multiple outputs."
+                         "Loop using the `output_neurons` property instead")
+
+    @property
+    def gradient(self):
+        raise ValueError(
+            "It is meaningless for a neural network to have a gradient cause there may be multiple outputs."
+            "Loop using the `output_neurons` property instead")
 
     def _backward(self):
         for layer in reversed(self.layers):
@@ -410,18 +445,21 @@ class LossNetwork(Network):
         """
         :param network: a <Network> instance
         :param data_set: a list of tuple, the first of the tuple is the feature vector, the second is the label
+        :param alpha: the weight that used to suppress the `weight_without_bias`, set this value higher will
+               make all weights closer to 0.
         """
         super(LossNetwork, self).__init__()
         self.network = network
         self.data_set = data_set
         self.alpha = alpha  # Regularization strength
         feature_number = len(data_set)
+        output_dimension = len(data_set[0][1])
         # Multiply in `−y_i*f(X_i)+1`
-        self.multi_gates_l = [MultiplyGate() for _ in range(feature_number)]
+        self.multi_gates_l = [[MultiplyGate() for _ in range(feature_number)] for d in range(output_dimension)]
         # Add in `−y_i*f(X_i)+1`
-        self.add_gates_l = [AddGate() for _ in range(feature_number)]
+        self.add_gates_l = [[AddGate() for _ in range(feature_number)] for d in range(output_dimension)]
         # ReLU in `max(0,−y_i*f(X_i)+1)`
-        self.relu_gates_l = [ReLUGate() for _ in range(feature_number)]
+        self.relu_gates_l = [[ReLUGate() for _ in range(feature_number)] for d in range(output_dimension)]
         # Add of the ∑ in `∑max(0,−y_i*f(X_i)+1)`
         self.add_gates_sigma_l = AddGate()
         weight_number = len(self.network.weights_without_bias)
@@ -436,14 +474,18 @@ class LossNetwork(Network):
 
     def _forward(self):
         # Calculate ∑max(0,−y_i*f(X_i)+1)
-        for i in range(len(self.relu_gates_l)):
+        all_relu_gates_l = []
+        for i in range(len(self.data_set)):
             feature = self.data_set[i][0]
-            label = self.data_set[i][1]
             self.network.forward(*[Unit(x) for x in feature])
-            self.multi_gates_l[i].forward(Unit(-label), self.network)
-            self.add_gates_l[i].forward(self.multi_gates_l[i], Unit(1.0))
-            self.relu_gates_l[i].forward(self.add_gates_l[i])
-        self.add_gates_sigma_l.forward(*self.relu_gates_l)
+            # Sum the loss of each output
+            for j in range(len(self.network.outputs)):
+                label = self.data_set[i][1][j]
+                self.multi_gates_l[j][i].forward(Unit(-label), self.network.outputs[j])
+                self.add_gates_l[j][i].forward(self.multi_gates_l[j][i], Unit(1.0))
+                self.relu_gates_l[j][i].forward(self.add_gates_l[j][i])
+                all_relu_gates_l.append(self.relu_gates_l[j][i])
+        self.add_gates_sigma_l.forward(*all_relu_gates_l)
         # Calculate α*∑w_i*w_i
         for i in range(len(self.multi_gates_r)):
             self.multi_gates_r[i].forward(self.network.weights_without_bias[i], self.network.weights_without_bias[i])
@@ -466,10 +508,11 @@ class LossNetwork(Network):
         # Then the gradient of w_0 and w_1 for each loop backward should be:
         # loop(i=1): 0.8, -1.3
         # loop(i=0): 0.8 + 0.1 = 0.9, -1.3 + 1 = -0.3
-        for i in reversed(range(len(self.relu_gates_l))):
-            self.relu_gates_l[i].backward()
-            self.add_gates_l[i].backward()
-            self.multi_gates_l[i].backward()
+        for i in reversed(range(len(self.data_set))):
+            for j in reversed(range(len(self.network.outputs))):
+                self.relu_gates_l[j][i].backward()
+                self.add_gates_l[j][i].backward()
+                self.multi_gates_l[j][i].backward()
             self.network.backward()
 
     @property
@@ -537,7 +580,8 @@ class BasicClassifier(object):
         """
         :param feature: A list of number
         """
-        predicted = self.network.forward(*[Unit(i) for i in feature]).value
+        self.network.forward(*[Unit(i) for i in feature])
+        predicted = [u.value for u in self.network.outputs]
         # Prevent memory leak
         self.network.clean_history()
         return predicted
@@ -554,25 +598,43 @@ class NeuralNetworkClassifier(BasicClassifier):
         network = NeuralNetwork(network_structure)
         super(NeuralNetworkClassifier, self).__init__(network)
 
+    # def train(self, data_set, learning_rate=0.01, steps=100):
+    #     """
+    #     Override the default train method, as neural network may have multiple outputs
+    #     For each Neuron in output layer, we will use an individual LossNetwork to calculate the loss
+    #     The total loss is the sum of LossNetworks
+    #     """
+    #     feature_number = len(data_set)
+    #     output_dimension = len(data_set[0][1])
+    #     # Used to add all the LossNetwork
+    #     add_gate = AddGate()
+    #     feature_list = [x[0] for x in data_set]
+    #     loss_networks = []
+    #     for i in range(output_dimension):
+    #         data_set[]
+    #         loss_networks.append(LossNetwork())
+    #     for _ in range(steps):
+    #         los
+
 
 if __name__ == '__main__':
     data_set = [
-        ([1.2, -2.1], -1),
-        ([-0.3, -0.5], -1),
-        ([3.0, 0.1], 1),
-        ([-0.1, -1.0], 1),
-        ([-1.0, 1.1], -1),
-        ([2.1, -3.0], 1),
-        ([1.1, -1.0], 1),
+        ([1.2, -2.1], [-1]),
+        ([-0.3, -0.5], [-1]),
+        ([3.0, 0.1], [1]),
+        ([-0.1, -1.0], [1]),
+        ([-1.0, 1.1], [-1]),
+        ([2.1, -3.0], [1]),
+        ([1.1, -1.0], [1]),
     ]
     # data_set = [
-    #     ([1.2], 1),
-    #     ([-0.3], -1),
-    #     ([2.1], 1),
-    #     ([-1.0], -1),
-    #     ([0.8], -1),
-    #     ([-3.0], 1),
-    #     ([-2.0], 1),
+    #     ([1.2], [1]),
+    #     ([-0.3], [-1]),
+    #     ([2.1], [1]),
+    #     ([-1.0], [-1]),
+    #     ([0.8], [-1]),
+    #     ([-3.0], [1]),
+    #     ([-2.0], [1]),
     # ]
     classifier = NeuralNetworkClassifier(network_structure=[2, 4, 8, 1])
     # classifier.simple_train(data_set)
@@ -586,12 +648,12 @@ if __name__ == '__main__':
             _x = x * 0.1
             _y = y * 0.1
             label = classifier.predict([_x, _y])
-            color = '#a1d5ed' if label > 0 else '#efaabd'
+            color = '#a1d5ed' if label[0] > 0 else '#efaabd'
             plt.plot(_x, _y, color, marker='*')
 
     for feature, label in data_set:
         print(classifier.predict(feature))
-        color = 'b' if label > 0 else 'r'
+        color = 'b' if label[0] > 0 else 'r'
         plt.plot(*feature, color + 'o')
     print([u.value for u in classifier.network.weights])
 
