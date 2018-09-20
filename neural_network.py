@@ -4,13 +4,19 @@
 Implement a neural network, using modular.
 Support input features with arbitrary dimensions.
 
-Something that not covered here:
+Something that may not be covered here:
 1. We hard code the activation function here using ReLU, but there're many other ones can be chosen. For example,
    sigmoid function. And we do not consider dying ReLu problem here.
    (Refer to https://medium.com/the-theory-of-everything/understanding-activation-functions-in-neural-networks-9491262884e0)
 2. We set the learning rate as a constant value for all the rounds of training process. However, there're many modern
    methods to adjust learning rate dynamically so that we can train the model more efficiently.
    (Refer to https://medium.com/@gauravksinghCS/adaptive-learning-rate-methods-e6e00dcbae5e)
+3. We hard code to use Hinge Loss for the loss network. There are many other loss functions can be chosen.
+   (Refer to https://isaacchanghau.github.io/post/loss_functions/)
+4. For linear classifier, We only implement a binary classifier here. For multiple-classes classification, you can use
+   multiple binary classifiers, or use neural network classifier with multiple output Neurons in the output layer.
+   For example, if you have two output Neurons, then [-1, -1] can represent class A, [-1, 1] is class B,
+   [1, -1] is class C and [1, 1] is class D. Thus it can be used as a 4-classes classifier.
 """
 import random
 from abc import abstractmethod
@@ -29,6 +35,7 @@ class Gate(object):
     """
 
     def __init__(self):
+        # Will be a tuple after first forward function
         self.utop = None
         # Will be a tuple after first forward function
         self.units = None
@@ -37,6 +44,7 @@ class Gate(object):
 
     @property
     def value(self):
+        # A float number or a tuple of float number
         return self.utop.value
 
     @value.setter
@@ -311,57 +319,49 @@ class SingleLayerNeuralNetwork(Network):
         self.feature_length = feature_length
         self.neuron_number = neuron_number
         self.neurons = [Neuron(feature_length) for _ in range(neuron_number)]
-        self.linear_network = LinearNetwork(neuron_number)
 
     def _forward(self, *units):
         assert len(units) == self.feature_length, "The input feature dimension should be consistent!"
         for n in self.neurons:
             n.forward(*units)
-        self.utop = self.linear_network.forward(*self.neurons)
-        return self.utop
+        return (n.utop for n in self.neurons)
 
     def _backward(self):
-        self.linear_network.backward()
         for n in reversed(self.neurons):
             n.backward()
 
     @property
     def weights(self):
-        w = []
-        for n in self.neurons:
-            w += n.weights
-        return w + self.linear_network.weights
+        return [n.weights for n in self.neurons]
 
     @property
     def weights_without_bias(self):
-        w = []
-        for n in self.neurons:
-            w += n.weights_without_bias
-        return w + self.linear_network.weights_without_bias
+        return [n.weights_without_bias for n in self.neurons]
 
 
 class NeuralNetwork(Network):
     """
-    A neural network with one hidden layer and one output layer:
+    [Example] A neural network with one input layer, two hidden layers and one output layer:
     x - n1 - n3
-      X    X    > f(x, y)
+      X    X    > n5
     y - n2 - n4
 
-    Where, the n1, n2 are <Neuron> in hidden layer, n3, n4 are <Neuron> in output layer, x, y are inputs
+    Where, the n1, n2 ,n3, n4 are <Neuron> in hidden layer, n5 is a <Neuron> in output layer, x, y are inputs
     """
 
-    def __init__(self, feature_length, network_structure):
+    def __init__(self, network_structure):
         """
-        :param feature_length: a Int number
         :param network_structure: a list, where each number means the neurons number for each layer.
-        e.g. [4, 8, 16] means two hidden layers which has 4 and 8 neurons for each, and one output layer with 16 neurons
+        e.g. [4, 8, 1] means the input layer has 4 dimensions feature, one hidden layer with 4 neurons,
+        and one output layer with 1 neurons
         """
         super(NeuralNetwork, self).__init__()
-        self.feature_length = feature_length
+        assert len(network_structure) >= 2, "The neural network should at least has a input layer and a output layer"
+        self.feature_length = network_structure[0]
         self.network_structure = network_structure
-        # The first layer's feature length is the actual feature length
-        self.layers = [SingleLayerNeuralNetwork(feature_length=feature_length, neuron_number=network_structure[0])]
-        # The other layer's feature length is the neuron number of its former layer
+        # The input layer is just some values, we only init other layers with Neurons
+        self.layers = []
+        # The layers' (except input layer) feature length is the neuron number of its former layer
         for i in range(1, len(network_structure)):
             self.layers.append(
                 SingleLayerNeuralNetwork(feature_length=network_structure[i - 1], neuron_number=network_structure[i]))
@@ -550,17 +550,17 @@ class LinearClassifier(BasicClassifier):
 
 
 class NeuralNetworkClassifier(BasicClassifier):
-    def __init__(self, feature_length, network_structure):
-        network = NeuralNetwork(feature_length, network_structure)
+    def __init__(self, network_structure):
+        network = NeuralNetwork(network_structure)
         super(NeuralNetworkClassifier, self).__init__(network)
 
 
 if __name__ == '__main__':
     data_set = [
-        ([1.2, 0.7], -1),
+        ([1.2, -2.1], -1),
         ([-0.3, -0.5], -1),
         ([3.0, 0.1], 1),
-        ([-0.1, -1.0], -1),
+        ([-0.1, -1.0], 1),
         ([-1.0, 1.1], -1),
         ([2.1, -3.0], 1),
         ([1.1, -1.0], 1),
@@ -574,9 +574,9 @@ if __name__ == '__main__':
     #     ([-3.0], 1),
     #     ([-2.0], 1),
     # ]
-    classifier = NeuralNetworkClassifier(feature_length=2, network_structure=[4, 8])
+    classifier = NeuralNetworkClassifier(network_structure=[2, 4, 8, 1])
     # classifier.simple_train(data_set)
-    classifier.train(data_set, learning_rate=0.01, steps=200)
+    classifier.train(data_set, learning_rate=0.01, steps=2000)
     classifier.plot_loss()
     print('---')
     import matplotlib.pyplot as plt

@@ -319,12 +319,12 @@ class SingleLayerNeuralNetwork(Network):
 
 class NeuralNetwork(Network):
     """
-    A neural network with one hidden layer and one output layer:
+    A neural network with two hidden layer and one output layer:
     x - n1 - n3
-      X    X    > f(x, y)
+      X    X    > n5
     y - n2 - n4
 
-    Where, the n1, n2 are <Neuron> in hidden layer, n3, n4 are <Neuron> in output layer, x, y are inputs
+    Where, the n1, n2, n3, n4 are <Neuron> in hidden layers,  n5 is <Neuron> in output layer, x, y are inputs
     """
 
     def __init__(self):
