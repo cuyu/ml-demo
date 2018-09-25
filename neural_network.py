@@ -5,15 +5,18 @@ Implement a neural network, using modular.
 Support input/output with arbitrary dimensions.
 
 Something that may not be covered here:
-1. We hard code the activation function here using ReLU, but there're many other ones can be chosen. For example,
-   sigmoid function. And we do not consider dying ReLu problem here.
+1. We hard code the activation function here using ReLU for hidden layers, but there're many other ones can be chosen.
+   For example, sigmoid function. And we do not consider dying ReLu problem here.
    (Refer to https://medium.com/the-theory-of-everything/understanding-activation-functions-in-neural-networks-9491262884e0)
-2. We set the learning rate as a constant value for all the rounds of training process. However, there're many modern
+2. We hard code the activation function for the output layer to linear function. Usually, the linear function is used
+   for regression as is has no bound.
+3. We set the learning rate as a constant value for all the rounds of training process. However, there're many modern
    methods to adjust learning rate dynamically so that we can train the model more efficiently.
    (Refer to https://medium.com/@gauravksinghCS/adaptive-learning-rate-methods-e6e00dcbae5e)
-3. We hard code to use Hinge Loss for the loss network. There are many other loss functions can be chosen.
+4. We hard code to use Hinge Loss for the loss network. And this function is just suit for intended output as +1 or -1.
+   There are many other loss functions can be chosen.
    (Refer to https://isaacchanghau.github.io/post/loss_functions/)
-4. For linear classifier, We only implement a binary classifier here. For multi-classes classification, you can use
+5. For linear classifier, We only implement a binary classifier here. For multi-classes classification, you can use
    multiple binary classifiers, or use neural network classifier with multiple output Neurons in the output layer.
    For example, if you have two output Neurons, then [-1, -1] can represent class A, [-1, 1] is class B,
    [1, -1] is class C and [1, 1] is class D. Thus it can be used as a 4-classes classifier.
@@ -291,18 +294,34 @@ class Neuron(Network):
     We can just think as it put the output of a <LinearNetwork> into a <ReLU> Gate
     """
 
-    def __init__(self, feature_length):
+    def __init__(self, feature_length, activation_function='Relu'):
+        """
+        :param feature_length: input dimension
+        :param activation_function: the activation function name, support:
+            - linear
+            - ReLu
+            - sigmoid
+        """
         super(Neuron, self).__init__()
         self.linear_network = LinearNetwork(feature_length)
-        self.relu_gate = ReLUGate()
+        self.activation_function = activation_function.lower()
+        if self.activation_function == 'relu':
+            self.activation_gate = ReLUGate()
+        elif self.activation_function == 'sigmoid':
+            self.activation_gate = SigmoidGate()
+        elif self.activation_function == 'linear':
+            # Just equal do nothing, as sum([x]) = x
+            self.activation_gate = AddGate()
+        else:
+            raise Exception('Activation function not supported!')
 
     def _forward(self, *units):
         self.linear_network.forward(*units)
-        self.utop = self.relu_gate.forward(self.linear_network)
+        self.utop = self.activation_gate.forward(self.linear_network)
         return self.utop
 
     def _backward(self):
-        self.relu_gate.backward()
+        self.activation_gate.backward()
         self.linear_network.backward()
 
     @property
@@ -322,11 +341,13 @@ class SingleLayerNeuralNetwork(Network):
     y - neuron2
     """
 
-    def __init__(self, feature_length, neuron_number):
+    def __init__(self, feature_length, neuron_number, activation_function='ReLu'):
         super(SingleLayerNeuralNetwork, self).__init__()
         self.feature_length = feature_length
         self.neuron_number = neuron_number
-        self.neurons = [Neuron(feature_length) for _ in range(neuron_number)]
+        self.activation_function = activation_function
+        self.neurons = [Neuron(feature_length, activation_function) for _ in range(neuron_number)]
+        self._outputs = self.neurons
 
     def _forward(self, *units):
         assert len(units) == self.feature_length, "The input feature dimension should be consistent!"
@@ -340,12 +361,12 @@ class SingleLayerNeuralNetwork(Network):
     @property
     def value(self):
         raise ValueError("It is meaningless for a layer to have a value cause there may be multiple outputs."
-                         "Loop using the `output_neurons` property instead")
+                         "Loop using the `outputs` property instead")
 
     @property
     def gradient(self):
         raise ValueError("It is meaningless for a layer to have a gradient cause there may be multiple outputs."
-                         "Loop using the `output_neurons` property instead")
+                         "Loop using the `outputs` property instead")
 
     @property
     def weights(self):
@@ -386,8 +407,14 @@ class NeuralNetwork(Network):
         self.layers = []
         # The layers' (except input layer) feature length is the neuron number of its former layer
         for i in range(1, len(network_structure)):
-            self.layers.append(
-                SingleLayerNeuralNetwork(feature_length=network_structure[i - 1], neuron_number=network_structure[i]))
+            # Output layer
+            if i == (len(network_structure) - 1):
+                layer = SingleLayerNeuralNetwork(feature_length=network_structure[i - 1],
+                                                 neuron_number=network_structure[i], activation_function='linear')
+            else:
+                layer = SingleLayerNeuralNetwork(feature_length=network_structure[i - 1],
+                                                 neuron_number=network_structure[i], activation_function='relu')
+            self.layers.append(layer)
 
         self._outputs = self.layers[-1].neurons
 
@@ -400,13 +427,13 @@ class NeuralNetwork(Network):
     @property
     def value(self):
         raise ValueError("It is meaningless for a neural network to have a value cause there may be multiple outputs."
-                         "Loop using the `output_neurons` property instead")
+                         "Loop using the `outputs` property instead")
 
     @property
     def gradient(self):
         raise ValueError(
             "It is meaningless for a neural network to have a gradient cause there may be multiple outputs."
-            "Loop using the `output_neurons` property instead")
+            "Loop using the `outputs` property instead")
 
     def _backward(self):
         for layer in reversed(self.layers):
@@ -431,7 +458,7 @@ class LossNetwork(Network):
     """
     The network to calculate the loss of the classification
 
-    For a simple linear classifier, the formula:
+    For for intended output y_i=+1 or -1, the formula:
         L=∑max(0,−y_i*(w_0*x_i0+w_1*x_i1+w_2)+1)+α*(w_0*w_0+w_1*w_1)
     Where, the x_i0,x_i1 are the input feature, y_i is the label, w_0, w_1 are the weights related to features
     (Not include the bias, i.e. a, b in above linear network, but not include c)
@@ -598,26 +625,10 @@ class NeuralNetworkClassifier(BasicClassifier):
         network = NeuralNetwork(network_structure)
         super(NeuralNetworkClassifier, self).__init__(network)
 
-    # def train(self, data_set, learning_rate=0.01, steps=100):
-    #     """
-    #     Override the default train method, as neural network may have multiple outputs
-    #     For each Neuron in output layer, we will use an individual LossNetwork to calculate the loss
-    #     The total loss is the sum of LossNetworks
-    #     """
-    #     feature_number = len(data_set)
-    #     output_dimension = len(data_set[0][1])
-    #     # Used to add all the LossNetwork
-    #     add_gate = AddGate()
-    #     feature_list = [x[0] for x in data_set]
-    #     loss_networks = []
-    #     for i in range(output_dimension):
-    #         data_set[]
-    #         loss_networks.append(LossNetwork())
-    #     for _ in range(steps):
-    #         los
-
 
 if __name__ == '__main__':
+    # As the output layer also uses ReLu as its activation function, the output range is [0, +inf)
+    # todo: change the activation function for output layer, or change the loss function (−y_i*f(X_i) is always 0 if label is 0)
     data_set = [
         ([1.2, -2.1], [-1]),
         ([-0.3, -0.5], [-1]),
@@ -636,25 +647,37 @@ if __name__ == '__main__':
     #     ([-3.0], [1]),
     #     ([-2.0], [1]),
     # ]
-    classifier = NeuralNetworkClassifier(network_structure=[2, 4, 8, 1])
+    # data_set = [
+    #     ([1.2, -2.1], [-1, -1]),
+    #     ([-0.3, -0.5], [-1, -1]),
+    #     ([3.0, 0.1], [1, -1]),
+    #     ([-0.1, -1.0], [1, -1]),
+    #     ([-1.0, 1.1], [-1, 1]),
+    #     ([2.1, -3.0], [1, 1]),
+    #     ([1.1, -1.0], [1, 1]),
+    #     ([-0.5, 0.8], [-1, 1]),
+    # ]
+    classifier = NeuralNetworkClassifier(network_structure=[2, 4, 1])
     # classifier.simple_train(data_set)
-    classifier.train(data_set, learning_rate=0.01, steps=2000)
+    classifier.train(data_set, learning_rate=0.01, steps=1000)
     classifier.plot_loss()
     print('---')
     import matplotlib.pyplot as plt
 
-    for x in range(-30, 30):
-        for y in range(-30, 30):
-            _x = x * 0.1
-            _y = y * 0.1
-            label = classifier.predict([_x, _y])
-            color = '#a1d5ed' if label[0] > 0 else '#efaabd'
-            plt.plot(_x, _y, color, marker='*')
+    colors = ['#DAF7A6', '#a1d5ed', '#efaabd', '#FFC300']
+
+    # for x in range(-30, 30):
+    #     for y in range(-30, 30):
+    #         _x = x * 0.1
+    #         _y = y * 0.1
+    #         label = classifier.predict([_x, _y])
+    #         color = colors[int((label[0] * 2 + label[1] + 3)/2)]
+    #         plt.plot(_x, _y, color, marker='*')
 
     for feature, label in data_set:
         print(classifier.predict(feature))
-        color = 'b' if label[0] > 0 else 'r'
-        plt.plot(*feature, color + 'o')
+        # color = colors[int((label[0] * 2 + label[1] + 3) / 2)]
+        # plt.plot(*feature, color, marker='o')
     print([u.value for u in classifier.network.weights])
 
     plt.show()
