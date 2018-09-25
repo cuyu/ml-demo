@@ -628,8 +628,8 @@ class NeuralNetworkClassifier(BasicClassifier):
 
 if __name__ == '__main__':
     # As the output layer also uses ReLu as its activation function, the output range is [0, +inf)
-    # todo: change the activation function for output layer, or change the loss function (−y_i*f(X_i) is always 0 if label is 0)
-    data_set = [
+    # Data set with 2 dimension input and 1 dimension output (binary classification)
+    data_set1 = [
         ([1.2, -2.1], [-1]),
         ([-0.3, -0.5], [-1]),
         ([3.0, 0.1], [1]),
@@ -638,46 +638,56 @@ if __name__ == '__main__':
         ([2.1, -3.0], [1]),
         ([1.1, -1.0], [1]),
     ]
-    # data_set = [
-    #     ([1.2], [1]),
-    #     ([-0.3], [-1]),
-    #     ([2.1], [1]),
-    #     ([-1.0], [-1]),
-    #     ([0.8], [-1]),
-    #     ([-3.0], [1]),
-    #     ([-2.0], [1]),
-    # ]
-    # data_set = [
-    #     ([1.2, -2.1], [-1, -1]),
-    #     ([-0.3, -0.5], [-1, -1]),
-    #     ([3.0, 0.1], [1, -1]),
-    #     ([-0.1, -1.0], [1, -1]),
-    #     ([-1.0, 1.1], [-1, 1]),
-    #     ([2.1, -3.0], [1, 1]),
-    #     ([1.1, -1.0], [1, 1]),
-    #     ([-0.5, 0.8], [-1, 1]),
-    # ]
-    classifier = NeuralNetworkClassifier(network_structure=[2, 4, 1])
+    # Data set with only one dimension input and 1 dimension output
+    data_set2 = [
+        ([1.2], [1]),
+        ([-0.3], [-1]),
+        ([2.1], [1]),
+        ([-1.0], [-1]),
+        ([0.8], [-1]),
+        ([-3.0], [1]),
+        ([-2.0], [1]),
+    ]
+    # Data set with 2 dimension input and 2 dimension output (4-classes classification)
+    data_set3 = [
+        ([1.2, -2.1], [-1, -1]),
+        ([-0.3, -0.5], [-1, -1]),
+        ([3.0, 0.1], [1, -1]),
+        ([-0.1, -1.0], [1, -1]),
+        ([-1.0, 1.1], [-1, 1]),
+        ([2.1, -3.0], [1, 1]),
+        ([1.1, -1.0], [1, 1]),
+        ([-0.5, 0.8], [-1, 1]),
+    ]
+    data_set = data_set3
+    classifier = NeuralNetworkClassifier(network_structure=[2, 4, 4, 2])
     # classifier.simple_train(data_set)
-    classifier.train(data_set, learning_rate=0.01, steps=1000)
+    classifier.train(data_set, learning_rate=0.01, steps=5000)
     classifier.plot_loss()
     print('---')
     import matplotlib.pyplot as plt
 
-    colors = ['#DAF7A6', '#a1d5ed', '#efaabd', '#FFC300']
+    colors = ['#FFC300', '#D5EF1A', '#42DE57', '#59DBDD']
+    colors_label = ['#F38D1A', '#90A113', '#038514', '#038385']
 
-    # for x in range(-30, 30):
-    #     for y in range(-30, 30):
-    #         _x = x * 0.1
-    #         _y = y * 0.1
-    #         label = classifier.predict([_x, _y])
-    #         color = colors[int((label[0] * 2 + label[1] + 3)/2)]
-    #         plt.plot(_x, _y, color, marker='*')
+    def clean_label(x):
+        if x < 0:
+            return -1
+        else:
+            return 1
+
+    for x in range(-30, 30):
+        for y in range(-30, 30):
+            _x = x * 0.1
+            _y = y * 0.1
+            label = classifier.predict([_x, _y])
+            color = colors[int((clean_label(label[0]) * 2 + clean_label(label[1]) + 3)/2)]
+            plt.plot(_x, _y, color, marker='*')
 
     for feature, label in data_set:
         print(classifier.predict(feature))
-        # color = colors[int((label[0] * 2 + label[1] + 3) / 2)]
-        # plt.plot(*feature, color, marker='o')
+        color = colors_label[int((clean_label(label[0]) * 2 + clean_label(label[1]) + 3) / 2)]
+        plt.plot(*feature, color, marker='o')
     print([u.value for u in classifier.network.weights])
 
     plt.show()
