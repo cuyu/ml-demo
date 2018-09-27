@@ -7,8 +7,52 @@ Note:
 import math
 
 import matplotlib.pyplot as plt
+import numpy as np
+from neural_network import Unit, Gate, Network
 
-from neural_network import Gate, Network
+
+class MaxGate(Gate):
+    def __init__(self):
+        super(MaxGate, self).__init__()
+        self._max_unit = None
+
+    def _forward(self, *units):
+        max_unit = units[0]
+        for u in units[1:]:
+            if u.value > max_unit.value:
+                max_unit = u
+        self._max_unit = max_unit
+        return Unit(max_unit.value)
+
+    def _backward(self):
+        self._max_unit.gradient += self.utop.gradient
+
+
+class MaxPoolingLayer(Network):
+    def __init__(self, input_shape, pooling_shape, stride=1):
+        """
+        :param input_shape: a 3-dimension list which meaning is [height, width, depth] of the inputs
+        :param pooling_shape: a 2-dimension list which meaning is [height, width] of the pooling
+        :param stride: the interval between two pooling window
+        """
+        super(MaxPoolingLayer, self).__init__()
+        self.input_shape = input_shape
+        self.pooling_shape = pooling_shape
+        self.stride = stride
+
+    def _forward(self, *units):
+        pass
+
+    def _backward(self):
+        pass
+
+    @property
+    def weights(self):
+        pass
+
+    @property
+    def weights_without_bias(self):
+        pass
 
 
 class Image(object):
@@ -46,7 +90,7 @@ def convolve(image, kernal):
             pixel = 0
             for m in range(kernal.height):
                 for n in range(kernal.width):
-                    pixel += int(expanded_image[i - expand_length + m][j - expand_length + n] * kernal[m][n])
+                    pixel += expanded_image[i - expand_length + m][j - expand_length + n] * kernal[m][n]
             new_image[i][j] = pixel
 
     return new_image
