@@ -5,10 +5,8 @@ Note:
     1.
 """
 import math
-
 import matplotlib.pyplot as plt
-import numpy as np
-from neural_network import Unit, Gate, Network
+from neural_network import Unit, Gate, Network, Neuron
 
 
 class MaxGate(Gate):
@@ -39,6 +37,7 @@ class MaxPoolingLayer(Network):
         self.input_shape = input_shape
         self.pooling_shape = pooling_shape
         self.stride = stride if stride else pooling_shape[0]
+        # fixme: the pool width/height should consider stride
         self.pool_width_number = int(input_shape[0] / pooling_shape[0])
         self.pool_height_number = int(input_shape[1] / pooling_shape[1])
         self.max_gates = [[MaxGate() for i in range(self.pool_width_number)] for j in
@@ -75,6 +74,76 @@ class MaxPoolingLayer(Network):
         return []
 
 
+class ConvReluLayer(Network):
+    """
+    A convolution layer follows with a ReLu layer.
+    (We put the two layers together as they always used together. It is meaningless to use CONV -> CONV -> RELU,
+     because the adjacent CONV layers can be merged into one CONV layer)
+    """
+
+    def __init__(self, kernel_shape, kernel_number, stride=1):
+        """
+        :param kernel_shape: a 3-dimension list which meaning is [width, height, depth] of the convolution kernel
+        :param kernel_number: determine how many kernel will be used in this layer
+        :param stride: the interval between two convolution window
+        """
+        super(ConvReluLayer, self).__init__()
+        self.kernel_shape = kernel_shape
+        self.kernel_number = kernel_number
+        self.stride = stride
+        # We use only one <Neuron> instance for a kernel as all the neurons share the same weights
+        self.common_neurons = [
+            Neuron(feature_length=kernel_shape[0] * kernel_shape[1] * kernel_shape[2], activation_function='relu') for _
+            in range(kernel_number)]
+
+    def _forward(self, unit_cube):
+        """
+        :param unit_cube: a <UnitCube> instance
+        :return: a <UnitCube> instance
+        """
+        output_width = int(unit_cube.width / self.stride)
+        output_height = int(unit_cube.height / self.stride)
+        utop = UnitCube(width=output_width, height=output_height, depth=self.kernel_number)
+        # The width/height of the padding that we need to fulfill with zeros
+        expand_width = int(math.floor(self.kernel_shape[0] / 2.0))
+        expand_height = int(math.floor(self.kernel_shape[1] / 2.0))
+        for d in range(self.kernel_number):
+            neuron = self.common_neurons[d]
+            for i in range(output_height):
+                for j in range(output_width):
+                    # For a 3 * 3 kernel, for (0, 0), it should pick width_range [-1, 2)
+                    units = unit_cube.range(width_range=range(j * self.stride - expand_width,
+                                                              j * self.stride - expand_width + self.kernel_shape[0]),
+                                            height_range=range(i * self.stride - expand_height,
+                                                               i * self.stride - expand_height + self.kernel_shape[1]),
+                                            depth_range=range(unit_cube.depth))
+                    assert len(units) == neuron.feature_length
+                    utop[d][i][j] = neuron.forward(*units)
+
+        return utop
+
+    def _backward(self):
+        for d in reversed(range(self.kernel_number)):
+            neuron = self.common_neurons[d]
+            for i in reversed(range(self.utop.height)):
+                for j in reversed(range(self.utop.width)):
+                    neuron.backward()
+
+    @property
+    def weights(self):
+        w = []
+        for n in self.common_neurons:
+            w += n.weights
+        return w
+
+    @property
+    def weights_without_bias(self):
+        w = []
+        for n in self.common_neurons:
+            w += n.weights_without_bias
+        return w
+
+
 class UnitCube(object):
     """
     A group of <Unit> instance, distributed in a cube
@@ -86,16 +155,23 @@ class UnitCube(object):
         self.depth = depth
         self.cube = [[[Unit(0) for i in range(width)] for j in range(height)] for k in range(depth)]
 
-    def range(self, width_range, height_range, depth_range):
+    def range(self, width_range, height_range, depth_range, padding='zero'):
         """
         :param width_range, height_range, depth_range: a list of indexes
+        :param padding: choose how to fill the padding outside range
         :return: A list of <Unit>
         """
         result = []
         for d in depth_range:
             for i in height_range:
                 for j in width_range:
-                    result.append(self.cube[d][i][j])
+                    try:
+                        result.append(self.cube[d][i][j])
+                    except IndexError:
+                        if padding == 'zero':
+                            result.append(Unit(0))
+                        else:
+                            raise Exception('Padding method not supported!')
         return result
 
     def imshow(self, depth):
@@ -218,7 +294,10 @@ if __name__ == '__main__':
     for i in range(28):
         for j in range(28):
             img0_cube[0][i][j].value = img0[i * 28 + j]
-    img0_cube.imshow(0)
+    conv_layer = ConvReluLayer(kernel_shape=[3, 3, 1], kernel_number=3)
+    conv_layer.forward(img0_cube)
+    conv_layer.backward()
+    conv_layer.utop.imshow(0)
     max_pool_layer = MaxPoolingLayer(input_shape=[28, 28, 1], pooling_shape=[2, 2])
     max_pool_layer.forward(img0_cube)
     max_pool_layer.backward()

@@ -303,6 +303,7 @@ class Neuron(Network):
             - sigmoid
         """
         super(Neuron, self).__init__()
+        self.feature_length = feature_length
         self.linear_network = LinearNetwork(feature_length)
         self.activation_function = activation_function.lower()
         if self.activation_function == 'relu':
