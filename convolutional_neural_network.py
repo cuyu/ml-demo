@@ -6,8 +6,58 @@ Note:
 """
 import math
 import matplotlib.pyplot as plt
-from neural_network import Unit, Gate, Network, Neuron
+from neural_network import Unit, Gate, Network, Neuron, NeuralNetwork
 
+
+class UnitCube(object):
+    """
+    A group of <Unit> instance, distributed in a cube
+    """
+
+    def __init__(self, width, height, depth):
+        self.width = width
+        self.height = height
+        self.depth = depth
+        self.cube = [[[Unit(0) for i in range(width)] for j in range(height)] for k in range(depth)]
+
+    def range(self, width_range, height_range, depth_range, padding='zero'):
+        """
+        :param width_range, height_range, depth_range: a list of indexes
+        :param padding: choose how to fill the padding outside range
+        :return: A list of <Unit>
+        """
+        result = []
+        for d in depth_range:
+            for i in height_range:
+                for j in width_range:
+                    try:
+                        result.append(self.cube[d][i][j])
+                    except IndexError:
+                        if padding == 'zero':
+                            result.append(Unit(0))
+                        else:
+                            raise Exception('Padding method not supported!')
+        return result
+
+    def imshow(self, depth):
+        """
+        Plot image of given depth
+        """
+        layer = self.cube[depth]
+        img = []
+        for i in range(self.height):
+            img.append([layer[i][j].value for j in range(self.width)])
+        plt.imshow(img, cmap='gray')
+        plt.show()
+
+    def __getitem__(self, item):
+        """
+        UnitCube[i] => get depth i
+        UnitCube[i][j] => get depth i, height j
+        UnitCube[i][j][k] => get depth i, height j, width k
+        """
+        return self.cube[item]
+    
 
 class MaxGate(Gate):
     def __init__(self):
@@ -81,16 +131,19 @@ class ConvReluLayer(Network):
      because the adjacent CONV layers can be merged into one CONV layer)
     """
 
-    def __init__(self, kernel_shape, kernel_number, stride=1):
+    def __init__(self, input_shape, kernel_shape, kernel_number, stride=1):
         """
+        :param input_shape: a 3-dimension list which meaning is [width, height, depth] of the inputs
         :param kernel_shape: a 3-dimension list which meaning is [width, height, depth] of the convolution kernel
         :param kernel_number: determine how many kernel will be used in this layer
         :param stride: the interval between two convolution window
         """
         super(ConvReluLayer, self).__init__()
+        self.input_shape = input_shape
         self.kernel_shape = kernel_shape
         self.kernel_number = kernel_number
         self.stride = stride
+        self.output_shape = [int(input_shape[0] / self.stride), int(input_shape[1] / self.stride), kernel_number]
         # We use only one <Neuron> instance for a kernel as all the neurons share the same weights
         self.common_neurons = [
             Neuron(feature_length=kernel_shape[0] * kernel_shape[1] * kernel_shape[2], activation_function='relu') for _
@@ -101,16 +154,14 @@ class ConvReluLayer(Network):
         :param unit_cube: a <UnitCube> instance
         :return: a <UnitCube> instance
         """
-        output_width = int(unit_cube.width / self.stride)
-        output_height = int(unit_cube.height / self.stride)
-        utop = UnitCube(width=output_width, height=output_height, depth=self.kernel_number)
+        utop = UnitCube(width=self.output_shape[0], height=self.output_shape[1], depth=self.kernel_number)
         # The width/height of the padding that we need to fulfill with zeros
         expand_width = int(math.floor(self.kernel_shape[0] / 2.0))
         expand_height = int(math.floor(self.kernel_shape[1] / 2.0))
         for d in range(self.kernel_number):
             neuron = self.common_neurons[d]
-            for i in range(output_height):
-                for j in range(output_width):
+            for i in range(self.output_shape[1]):
+                for j in range(self.output_shape[0]):
                     # For a 3 * 3 kernel, for (0, 0), it should pick width_range [-1, 2)
                     units = unit_cube.range(width_range=range(j * self.stride - expand_width,
                                                               j * self.stride - expand_width + self.kernel_shape[0]),
@@ -144,73 +195,61 @@ class ConvReluLayer(Network):
         return w
 
 
-class UnitCube(object):
-    """
-    A group of <Unit> instance, distributed in a cube
-    """
+class CNNStructure(object):
+    _SUPPORT_LAYERS = frozenset(['CONV', 'POOL', 'FC'])
 
-    def __init__(self, width, height, depth):
-        self.width = width
-        self.height = height
-        self.depth = depth
-        self.cube = [[[Unit(0) for i in range(width)] for j in range(height)] for k in range(depth)]
+    def __init__(self):
+        self.layers = []
 
-    def range(self, width_range, height_range, depth_range, padding='zero'):
+    def add_layer(self, layer_type, layer_options):
         """
-        :param width_range, height_range, depth_range: a list of indexes
-        :param padding: choose how to fill the padding outside range
-        :return: A list of <Unit>
+        :param layer_type: a string
+        :param layer_options: a dict of valid arguments for corresponding layer. For 'FC' layer, the layer_option should
+            be {'neuron_number': xxx}.
         """
-        result = []
-        for d in depth_range:
-            for i in height_range:
-                for j in width_range:
-                    try:
-                        result.append(self.cube[d][i][j])
-                    except IndexError:
-                        if padding == 'zero':
-                            result.append(Unit(0))
-                        else:
-                            raise Exception('Padding method not supported!')
-        return result
-
-    def imshow(self, depth):
-        """
-        Plot image of given depth
-        """
-        layer = self.cube[depth]
-        img = []
-        for i in range(self.height):
-            img.append([layer[i][j].value for j in range(self.width)])
-        plt.imshow(img, cmap='gray')
-        plt.show()
-
-    def __getitem__(self, item):
-        """
-        UnitCube[i] => get depth i
-        UnitCube[i][j] => get depth i, height j
-        UnitCube[i][j][k] => get depth i, height j, width k
-        """
-        return self.cube[item]
+        assert layer_type in self._SUPPORT_LAYERS
+        if layer_type == 'CONV':
+            self.layers.append(ConvReluLayer(**layer_options))
+        elif layer_type == 'POOL':
+            last_layer = self.layers[-1]
+            assert isinstance(last_layer, ConvReluLayer), 'Only support pooling after conv layer'
+            self.layers.append(MaxPoolingLayer(input_shape=last_layer.output_shape, **layer_options))
+        elif layer_type == 'FC':
+            # todo
+            dnn_structure = []
 
 
 class ConvolutionalNeuralNetwork(Network):
-    def __init__(self):
+    def __init__(self, network_structure):
+        """
+        :param network_structure: a <CNNStructure> instance
+        """
         super(ConvolutionalNeuralNetwork, self).__init__()
+        self.network_structure = network_structure
+        self.layers = network_structure.layers
 
     def _forward(self, *units):
-        pass
+        for l in self.layers:
+            utop = l.forward()
+        return utop
 
     def _backward(self):
-        pass
+        for l in reversed(self.layers):
+            l.backward()
 
     @property
     def weights(self):
-        pass
+        w = []
+        for n in self.layers:
+            w += n.weights
+        return w
 
     @property
     def weights_without_bias(self):
-        pass
+        w = []
+        for n in self.layers:
+            w += n.weights_without_bias
+        return w
 
 
 if __name__ == '__main__':
@@ -223,7 +262,7 @@ if __name__ == '__main__':
     for i in range(28):
         for j in range(28):
             img0_cube[0][i][j].value = img0[i * 28 + j]
-    conv_layer = ConvReluLayer(kernel_shape=[3, 3, 1], kernel_number=3)
+    conv_layer = ConvReluLayer(input_shape=[28, 28, 1], kernel_shape=[3, 3, 1], kernel_number=3)
     conv_layer.forward(img0_cube)
     conv_layer.backward()
     conv_layer.utop.imshow(0)
