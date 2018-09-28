@@ -31,28 +31,71 @@ class MaxGate(Gate):
 class MaxPoolingLayer(Network):
     def __init__(self, input_shape, pooling_shape, stride=1):
         """
-        :param input_shape: a 3-dimension list which meaning is [height, width, depth] of the inputs
-        :param pooling_shape: a 2-dimension list which meaning is [height, width] of the pooling
+        :param input_shape: a 3-dimension list which meaning is [width, height, depth] of the inputs
+        :param pooling_shape: a 2-dimension list which meaning is [width, height] of the pooling
         :param stride: the interval between two pooling window
         """
         super(MaxPoolingLayer, self).__init__()
         self.input_shape = input_shape
         self.pooling_shape = pooling_shape
         self.stride = stride
+        self.pool_width_number = input_shape[0] / pooling_shape[0]
+        self.pool_height_number = input_shape[1] / pooling_shape[1]
+        self.max_gates = [[MaxGate() for i in range(self.pool_width_number)] for j in
+                          range(self.pool_height_number)]
 
-    def _forward(self, *units):
-        pass
+    def _forward(self, unit_cube):
+        """
+        :param unit_cube: a <UnitCube> instance
+        :return: a <UnitCube> instance
+        """
+        height, width, depth = self.input_shape
+        utop = UnitCube(self.pool_width_number, self.pool_height_number, depth)
+        for d in range(depth):
+            for i in range(self.pool_height_number):
+                for j in range(self.pool_width_number):
+                    utop[d][i][j] = self.max_gates[i][j].forward(
+                        unit_cube.range(width=range(i, i + self.pooling_shape[0]),
+                                        height=range(j, j + self.pooling_shape[1]),
+                                        depth=d))
+        return utop
 
     def _backward(self):
-        pass
+        # The sequence does not matters here
+        for i in range(self.pool_height_number):
+            for j in range(self.pool_width_number):
+                self.max_gates[i][j].backward()
 
     @property
     def weights(self):
-        pass
+        return []
 
     @property
     def weights_without_bias(self):
-        pass
+        return []
+
+
+class UnitCube(object):
+    """
+    A group of <Unit> instance, distributed in a cube
+    """
+
+    def __init__(self, width, height, depth):
+        self.width = width
+        self.height = height
+        self.depth = depth
+        self.cube = [[[Unit(0) for i in range(width)] for j in range(height)] for k in range(depth)]
+
+    def range(self, width, height, depth):
+        return self.cube
+
+    def __getitem__(self, item):
+        """
+        UnitCube[i] => get depth i
+        UnitCube[i][j] => get depth i, height j
+        UnitCube[i][j][k] => get depth i, height j, width k
+        """
+        return self.cube[item]
 
 
 class Image(object):
@@ -146,4 +189,9 @@ def how_to_understand_convolution():
 
 
 if __name__ == '__main__':
+    from mnist import MNIST
+
+    mndata = MNIST('./data')
+    mndata.gz = True
+    images, labels = mndata.load_training()
     how_to_understand_convolution()
