@@ -29,18 +29,18 @@ class MaxGate(Gate):
 
 
 class MaxPoolingLayer(Network):
-    def __init__(self, input_shape, pooling_shape, stride=1):
+    def __init__(self, input_shape, pooling_shape, stride=None):
         """
         :param input_shape: a 3-dimension list which meaning is [width, height, depth] of the inputs
         :param pooling_shape: a 2-dimension list which meaning is [width, height] of the pooling
-        :param stride: the interval between two pooling window
+        :param stride: the interval between two pooling window, by default will use the width of the pooling shape
         """
         super(MaxPoolingLayer, self).__init__()
         self.input_shape = input_shape
         self.pooling_shape = pooling_shape
-        self.stride = stride
-        self.pool_width_number = input_shape[0] / pooling_shape[0]
-        self.pool_height_number = input_shape[1] / pooling_shape[1]
+        self.stride = stride if stride else pooling_shape[0]
+        self.pool_width_number = int(input_shape[0] / pooling_shape[0])
+        self.pool_height_number = int(input_shape[1] / pooling_shape[1])
         self.max_gates = [[MaxGate() for i in range(self.pool_width_number)] for j in
                           range(self.pool_height_number)]
 
@@ -55,9 +55,9 @@ class MaxPoolingLayer(Network):
             for i in range(self.pool_height_number):
                 for j in range(self.pool_width_number):
                     utop[d][i][j] = self.max_gates[i][j].forward(
-                        unit_cube.range(width=range(i, i + self.pooling_shape[0]),
-                                        height=range(j, j + self.pooling_shape[1]),
-                                        depth=d))
+                        *unit_cube.range(width_range=range(j * self.stride, j * self.stride + self.pooling_shape[0]),
+                                         height_range=range(i * self.stride, i * self.stride + self.pooling_shape[1]),
+                                         depth_range=[d]))
         return utop
 
     def _backward(self):
@@ -86,8 +86,28 @@ class UnitCube(object):
         self.depth = depth
         self.cube = [[[Unit(0) for i in range(width)] for j in range(height)] for k in range(depth)]
 
-    def range(self, width, height, depth):
-        return self.cube
+    def range(self, width_range, height_range, depth_range):
+        """
+        :param width_range, height_range, depth_range: a list of indexes
+        :return: A list of <Unit>
+        """
+        result = []
+        for d in depth_range:
+            for i in height_range:
+                for j in width_range:
+                    result.append(self.cube[d][i][j])
+        return result
+
+    def imshow(self, depth):
+        """
+        Plot image of given depth
+        """
+        layer = self.cube[depth]
+        img = []
+        for i in range(self.height):
+            img.append([layer[i][j].value for j in range(self.width)])
+        plt.imshow(img, cmap='gray')
+        plt.show()
 
     def __getitem__(self, item):
         """
@@ -191,7 +211,15 @@ def how_to_understand_convolution():
 if __name__ == '__main__':
     from mnist import MNIST
 
-    mndata = MNIST('./data')
-    mndata.gz = True
-    images, labels = mndata.load_training()
+    mndata = MNIST('./data', gz=True)
+    images, labels = mndata.load_testing()
+    img0 = images[0]
+    img0_cube = UnitCube(width=28, height=28, depth=1)
+    for i in range(28):
+        for j in range(28):
+            img0_cube[0][i][j].value = img0[i * 28 + j]
+    img0_cube.imshow(0)
+    max_pool_layer = MaxPoolingLayer(input_shape=[28, 28, 1], pooling_shape=[2, 2])
+    max_pool_layer.forward(img0_cube)
+    max_pool_layer.backward()
     how_to_understand_convolution()
