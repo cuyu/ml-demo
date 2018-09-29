@@ -6,7 +6,7 @@ Note:
 """
 import math
 import matplotlib.pyplot as plt
-from neural_network import Unit, Gate, Network, Neuron, NeuralNetwork
+from neural_network import Unit, Gate, Network, Neuron, NeuralNetwork, BasicClassifier
 
 
 class UnitCube(object):
@@ -241,8 +241,16 @@ class ConvolutionalNeuralNetwork(Network):
         super(ConvolutionalNeuralNetwork, self).__init__()
         self.network_structure = network_structure
         self.layers = network_structure.layers
+        self._outputs = self.layers[-1].outputs
 
-    def _forward(self, unit_cube):
+    def _forward(self, *units):
+        input_shape = self.network_structure.input_shape
+        # fixme: we assume the inputs arranged by depth, height, width
+        unit_cube = UnitCube(width=input_shape[0], height=input_shape[1], depth=input_shape[2])
+        for d in range(input_shape[2]):
+            for i in range(input_shape[1]):
+                for j in range(input_shape[0]):
+                    unit_cube[d][i][j] = units[i * input_shape[0] + j + d * input_shape[0] * input_shape[1]]
         intermediate_result = self.layers[0].forward(unit_cube)
         for l in self.layers[1:-1]:
             utop = l.forward(intermediate_result)
@@ -271,30 +279,47 @@ class ConvolutionalNeuralNetwork(Network):
         return w
 
 
+class ConvolutionalNeuralNetworkClassifier(BasicClassifier):
+    def __init__(self, network_structure):
+        """
+        :param network_structure: a <CNNStructure> instance
+        """
+        network = ConvolutionalNeuralNetwork(network_structure)
+        super(ConvolutionalNeuralNetworkClassifier, self).__init__(network)
+
+
 if __name__ == '__main__':
     from mnist import MNIST
 
     mndata = MNIST('./data', gz=True)
     images, labels = mndata.load_testing()
-    img0 = images[0]
-    img0_cube = UnitCube(width=28, height=28, depth=1)
-    for i in range(28):
-        for j in range(28):
-            img0_cube[0][i][j].value = img0[i * 28 + j]
+
+    def transform_label(label):
+        new_label = [-1 for _ in range(10)]
+        new_label[label] = 1
+        return new_label
+
+    data_set = [(images[i], transform_label(labels[i])) for i in range(100)]
+
     cnn_structure = CNNStructure(input_shape=[28, 28, 1])
     cnn_structure.add_conv_relu([5, 5], 2)
     cnn_structure.add_max_pooling([2, 2])
     cnn_structure.add_conv_relu([3, 3], 2)
     cnn_structure.add_max_pooling([2, 2], 2)
     cnn_structure.add_dnn([4, 8, 10])
-    cnn = ConvolutionalNeuralNetwork(cnn_structure)
-    cnn.forward(img0_cube)
-    cnn.backward()
+    cnn_classifier = ConvolutionalNeuralNetworkClassifier(cnn_structure)
+    cnn_classifier.train(data_set)
+    cnn_classifier.plot_loss()
 
-    conv_layer = ConvReluLayer(input_shape=[28, 28, 1], kernel_shape=[3, 3, 1], kernel_number=3)
-    conv_layer.forward(img0_cube)
-    conv_layer.backward()
-    conv_layer.utop.imshow(0)
-    max_pool_layer = MaxPoolingLayer(input_shape=[28, 28, 1], pooling_shape=[2, 2])
-    max_pool_layer.forward(img0_cube)
-    max_pool_layer.backward()
+    # img0 = images[0]
+    # img0_cube = UnitCube(width=28, height=28, depth=1)
+    # for i in range(28):
+    #     for j in range(28):
+    #         img0_cube[0][i][j].value = img0[i * 28 + j]
+    # conv_layer = ConvReluLayer(input_shape=[28, 28, 1], kernel_shape=[3, 3, 1], kernel_number=3)
+    # conv_layer.forward(img0_cube)
+    # conv_layer.backward()
+    # conv_layer.utop.imshow(0)
+    # max_pool_layer = MaxPoolingLayer(input_shape=[28, 28, 1], pooling_shape=[2, 2])
+    # max_pool_layer.forward(img0_cube)
+    # max_pool_layer.backward()
