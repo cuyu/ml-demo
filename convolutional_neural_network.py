@@ -57,7 +57,7 @@ class UnitCube(object):
         UnitCube[i][j][k] => get depth i, height j, width k
         """
         return self.cube[item]
-    
+
 
 class MaxGate(Gate):
     def __init__(self):
@@ -90,6 +90,7 @@ class MaxPoolingLayer(Network):
         # fixme: the pool width/height should consider stride
         self.pool_width_number = int(input_shape[0] / pooling_shape[0])
         self.pool_height_number = int(input_shape[1] / pooling_shape[1])
+        self.output_shape = [self.pool_width_number, self.pool_height_number, self.input_shape[-1]]
         self.max_gates = [[MaxGate() for i in range(self.pool_width_number)] for j in
                           range(self.pool_height_number)]
 
@@ -196,27 +197,40 @@ class ConvReluLayer(Network):
 
 
 class CNNStructure(object):
-    _SUPPORT_LAYERS = frozenset(['CONV', 'POOL', 'FC'])
-
-    def __init__(self):
+    def __init__(self, input_shape):
+        self.input_shape = input_shape
         self.layers = []
 
-    def add_layer(self, layer_type, layer_options):
+    def add_conv_relu(self, kernel_size, kernel_number, stride=1):
         """
-        :param layer_type: a string
-        :param layer_options: a dict of valid arguments for corresponding layer. For 'FC' layer, the layer_option should
-            be {'neuron_number': xxx}.
+        :param kernel_size: a 2-dimension list, e.g. [3, 3]
+        :param kernel_number: a int
+        :param stride: a int
         """
-        assert layer_type in self._SUPPORT_LAYERS
-        if layer_type == 'CONV':
-            self.layers.append(ConvReluLayer(**layer_options))
-        elif layer_type == 'POOL':
-            last_layer = self.layers[-1]
-            assert isinstance(last_layer, ConvReluLayer), 'Only support pooling after conv layer'
-            self.layers.append(MaxPoolingLayer(input_shape=last_layer.output_shape, **layer_options))
-        elif layer_type == 'FC':
-            # todo
-            dnn_structure = []
+        input_shape = self.input_shape if len(self.layers) == 0 else self.layers[-1].output_shape
+        kernel_shape = kernel_size + [input_shape[-1]]
+        self.layers.append(
+            ConvReluLayer(input_shape=input_shape, kernel_shape=kernel_shape, kernel_number=kernel_number,
+                          stride=stride))
+
+    def add_max_pooling(self, pool_size, stride=None):
+        """
+        :param pool_size: a 2-dimension list, e.g. [3, 3]
+        :param stride: a int, default is width of pool_size
+        """
+        last_layer = self.layers[-1]
+        self.layers.append(MaxPoolingLayer(input_shape=last_layer.output_shape, pooling_shape=pool_size, stride=stride))
+
+    def add_dnn(self, structure):
+        """
+        :param structure: a list of number, where each number is the neuron number of each hidden layer/output layer
+        """
+        last_layer = self.layers[-1]
+        input_number = 1
+        for i in last_layer.output_shape:
+            input_number *= i
+        network_structure = [input_number] + structure
+        self.layers.append(NeuralNetwork(network_structure=network_structure))
 
 
 class ConvolutionalNeuralNetwork(Network):
@@ -228,10 +242,15 @@ class ConvolutionalNeuralNetwork(Network):
         self.network_structure = network_structure
         self.layers = network_structure.layers
 
-    def _forward(self, *units):
-        for l in self.layers:
-            utop = l.forward()
-        return utop
+    def _forward(self, unit_cube):
+        intermediate_result = self.layers[0].forward(unit_cube)
+        for l in self.layers[1:-1]:
+            utop = l.forward(intermediate_result)
+            intermediate_result = utop
+        # For the last layer, it should be a DNN
+        self.layers[-1].forward(*intermediate_result.range(range(intermediate_result.width),
+                                                           range(intermediate_result.height),
+                                                           range(intermediate_result.depth)))
 
     def _backward(self):
         for l in reversed(self.layers):
@@ -262,6 +281,16 @@ if __name__ == '__main__':
     for i in range(28):
         for j in range(28):
             img0_cube[0][i][j].value = img0[i * 28 + j]
+    cnn_structure = CNNStructure(input_shape=[28, 28, 1])
+    cnn_structure.add_conv_relu([5, 5], 2)
+    cnn_structure.add_max_pooling([2, 2])
+    cnn_structure.add_conv_relu([3, 3], 2)
+    cnn_structure.add_max_pooling([2, 2], 2)
+    cnn_structure.add_dnn([4, 8, 10])
+    cnn = ConvolutionalNeuralNetwork(cnn_structure)
+    cnn.forward(img0_cube)
+    cnn.backward()
+
     conv_layer = ConvReluLayer(input_shape=[28, 28, 1], kernel_shape=[3, 3, 1], kernel_number=3)
     conv_layer.forward(img0_cube)
     conv_layer.backward()
