@@ -591,7 +591,8 @@ class BasicClassifier(object):
         Train the classifier using loss function (with all the features and labels)
         """
         loss_network = LossNetwork(self.network, data_set)
-        for _ in range(steps):
+        for s in range(steps):
+            print('epoch: {}'.format(s))
             loss_network.forward()
             self._loss_by_step.append(loss_network.value)
             loss_network.set_utop_gradient(-1)

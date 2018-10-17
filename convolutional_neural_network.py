@@ -2,7 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 Note:
-    1.
+    1. The correctness is not ensured, just take a look at the thoughts.
+    2. The code is not optimized, so it is very slow..
 """
 import math
 import matplotlib.pyplot as plt
@@ -291,7 +292,7 @@ class ConvolutionalNeuralNetworkClassifier(BasicClassifier):
 if __name__ == '__main__':
     from mnist import MNIST
 
-    mndata = MNIST('./data', gz=True)
+    mndata = MNIST('./MNIST_data', gz=True)
     images, labels = mndata.load_testing()
 
     def transform_label(label):
@@ -299,7 +300,7 @@ if __name__ == '__main__':
         new_label[label] = 1
         return new_label
 
-    data_set = [(images[i], transform_label(labels[i])) for i in range(100)]
+    data_set = [(images[i], transform_label(labels[i])) for i in range(64)]
 
     cnn_structure = CNNStructure(input_shape=[28, 28, 1])
     cnn_structure.add_conv_relu([5, 5], 2)
