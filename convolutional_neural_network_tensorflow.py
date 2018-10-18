@@ -20,12 +20,12 @@ def convolutional_neural_network(inputs):
         # POOLING layer 1, the input size from 28x28 -> 14x14
         x = tf.layers.max_pooling2d(x, pool_size=(2, 2), strides=(2, 2), name='pooling1')
         # CONV layer 2
-        x = tf.layers.conv2d(x, filters=16, kernel_size=3, activation=tf.nn.relu, padding='same', name='conv2')
+        x = tf.layers.conv2d(x, filters=32, kernel_size=3, activation=tf.nn.relu, padding='same', name='conv2')
         # CONV layer 3
         x = tf.layers.conv2d(x, filters=8, kernel_size=3, activation=tf.nn.relu, padding='same', name='conv3')
         # POOLING layer 2, the input size from 14x14 -> 7x7
         x = tf.layers.max_pooling2d(x, pool_size=(2, 2), strides=(2, 2), name='pooling2')
-        # Flatten the input to 7x7x16=392 dimensions
+        # Flatten the input to 7x7x8=392 dimensions
         x = tf.reshape(x, shape=[-1, 392])
         # Hidden layer 1
         x = tf.layers.dense(x, units=16, activation=tf.nn.relu, name='hidden1')
@@ -50,7 +50,7 @@ class ConvolutionalNeuralNetworkClassifier(object):
         with tf.name_scope('loss'):  # For tensorboard
             loss = tf.losses.mean_squared_error(self.labels, self.outputs)
         tf.summary.scalar('loss', loss)  # For tensorboard
-        optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate).minimize(loss)
+        optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
 
         # Merge all the summaries, but here is just one loss scalar
         merged = tf.summary.merge_all()  # For tensorboard
@@ -74,12 +74,20 @@ class ConvolutionalNeuralNetworkClassifier(object):
             })
             file_writer.add_summary(summary, i)  # For tensorboard
 
-    def predict(self, x, y):
+    def predict(self, inputs):
         return self.sess.run(self.outputs, feed_dict={
-            self.inputs: [[x, y]],
+            self.inputs: [np.reshape(inputs, [28, 28, 1])],
         })
 
 
 if __name__ == '__main__':
     classifier = ConvolutionalNeuralNetworkClassifier()
-    classifier.train(MNIST, steps=5000)
+    classifier.train(MNIST, steps=50000)
+    batch, labels = MNIST.test.next_batch(batch_size=10000)
+    correct = 0
+    for i in range(len(batch)):
+        predict_array = classifier.predict(batch[i])
+        predict_number = np.argmax(predict_array)
+        if predict_number == labels[i]:
+            correct += 1
+    print('Accuracy: {}'.format(correct/len(batch)))
