@@ -2,6 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 CNN using tensorflow
+
+Can also refer to https://www.tensorflow.org/tutorials/estimators/cnn
 """
 import tensorflow as tf
 import numpy as np
@@ -17,20 +19,23 @@ def convolutional_neural_network(inputs):
         x = tf.reshape(inputs, shape=[-1, 28, 28, 1])
         # CONV layer 1
         x = tf.layers.conv2d(x, filters=64, kernel_size=5, activation=tf.nn.relu, padding='same', name='conv1')
+        x = tf.layers.dropout(x, rate=0.4)
         # POOLING layer 1, the input size from 28x28 -> 14x14
         x = tf.layers.max_pooling2d(x, pool_size=(2, 2), strides=(2, 2), name='pooling1')
         # CONV layer 2
         x = tf.layers.conv2d(x, filters=32, kernel_size=3, activation=tf.nn.relu, padding='same', name='conv2')
+        x = tf.layers.dropout(x, rate=0.4)
         # CONV layer 3
         x = tf.layers.conv2d(x, filters=8, kernel_size=3, activation=tf.nn.relu, padding='same', name='conv3')
         # POOLING layer 2, the input size from 14x14 -> 7x7
         x = tf.layers.max_pooling2d(x, pool_size=(2, 2), strides=(2, 2), name='pooling2')
         # Flatten the input to 7x7x8=392 dimensions
-        x = tf.reshape(x, shape=[-1, 392])
+        x = tf.reshape(x, shape=[-1, 7 * 7 * 8])
         # Hidden layer 1
-        x = tf.layers.dense(x, units=16, activation=tf.nn.relu, name='hidden1')
+        x = tf.layers.dense(x, units=32, activation=tf.nn.relu, name='hidden1')
+        x = tf.layers.dropout(x, rate=0.4)
         # Hidden layer 2
-        x = tf.layers.dense(x, units=8, activation=tf.nn.relu, name='hidden2')
+        x = tf.layers.dense(x, units=16, activation=tf.nn.relu, name='hidden2')
         # Hidden layer 3, output 10 classes
         x = tf.layers.dense(x, units=10, activation=tf.nn.sigmoid, name='hidden3')
         return x
