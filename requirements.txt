@@ -1,4 +1,4 @@
 numpy
 matplotlib
 python-mnist
-tensorflow
+tensorflow==1.11.0
