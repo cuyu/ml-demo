@@ -53,6 +53,7 @@ class ConvolutionalNeuralNetworkClassifier(object):
 
     def train(self, data_set, learning_rate=0.001, steps=100):
         with tf.name_scope('loss'):  # For tensorboard
+            # Note the loss function provided by tensorflow already includes the weights regularization part
             loss = tf.losses.mean_squared_error(self.labels, self.outputs)
         tf.summary.scalar('loss', loss)  # For tensorboard
         optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
