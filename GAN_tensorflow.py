@@ -45,25 +45,25 @@ def generative_network(inputs, is_training):
         x = tf.layers.dense(inputs, units=16, activation=tf.nn.leaky_relu, name='g_hidden1')
         x = tf.layers.dense(x, units=7 * 7 * 8, activation=tf.nn.leaky_relu, name='g_hidden2')
         x = tf.layers.dropout(x, rate=0.4)
-        x = tf.contrib.layers.batch_norm(x, is_training=is_training, decay=momentum)
+        x = tf.layers.batch_normalization(x, training=is_training, momentum=momentum)
         x = tf.reshape(x, shape=[-1, 7, 7, 8])
         # We use strides=2 so that input size from 7x7 -> 14x14
         x = tf.layers.conv2d_transpose(x, filters=8, kernel_size=3, strides=2, activation=tf.nn.leaky_relu,
                                        padding='same', name='transpose_conv1')
         x = tf.layers.dropout(x, rate=0.4)
-        x = tf.contrib.layers.batch_norm(x, is_training=is_training, decay=momentum)
+        x = tf.layers.batch_normalization(x, training=is_training, momentum=momentum)
         # The input size from 14x14 -> 28x28
         x = tf.layers.conv2d_transpose(x, filters=32, kernel_size=3, strides=2, activation=tf.nn.leaky_relu,
                                        padding='same', name='transpose_conv2')
         x = tf.layers.dropout(x, rate=0.4)
-        x = tf.contrib.layers.batch_norm(x, is_training=is_training, decay=momentum)
+        x = tf.layers.batch_normalization(x, training=is_training, momentum=momentum)
         # We use strides=1, so the input size stay the same
         # Note we do not use pooling layer, because pooling will lose some information which makes it difficult to train
         x = tf.layers.conv2d_transpose(x, filters=64, kernel_size=5, strides=1, activation=tf.nn.leaky_relu,
                                        padding='same', name='transpose_conv3')
         # fixme: is when strides=1 padding='same', conv2d_trainspose == conv2d?
         x = tf.layers.dropout(x, rate=0.4)
-        x = tf.contrib.layers.batch_norm(x, is_training=is_training, decay=momentum)
+        x = tf.layers.batch_normalization(x, training=is_training, momentum=momentum)
         # Use filters=1 to output 1 dimension image (gray-scale image); use sigmoid to make the output between 0 to 1
         x = tf.layers.conv2d_transpose(x, filters=1, kernel_size=3, strides=1, activation=tf.nn.sigmoid,
                                        padding='same', name='transpose_conv4')
@@ -161,7 +161,7 @@ if __name__ == '__main__':
             is_training: True,
         })
 
-        if i % 200 == 0:
+        if i % 100 == 0:
             print(loss_d_value, loss_g_value)
             # Display some images created by generative_network
             gen_img = sess.run(g_network, feed_dict={
