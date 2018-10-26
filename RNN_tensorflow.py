@@ -49,7 +49,7 @@ if __name__ == '__main__':
     batch_size = 1
     num_steps = 100
     learning_rate = 0.0001
-    steps = 10000
+    steps = 1000
     output_dimension = len(vocab)
 
     # Placeholder for the inputs in a given iteration.
@@ -69,14 +69,42 @@ if __name__ == '__main__':
         label_vector = np.zeros([batch_size, num_steps, output_dimension])
         for i in range(len(output_labels)):
             label_vector[0][i][output_labels[i]] = 1
-        loss_value = sess.run([loss],
-                              feed_dict={
-                                  words: np.reshape(input_example, [batch_size, num_steps, 1]),
-                                  labels: label_vector,
-                              })
+        loss_value = sess.run([loss], feed_dict={
+            words: np.reshape(input_example, [batch_size, num_steps, 1]),
+            labels: label_vector,
+        })
         # Train the weights
-        sess.run(optimizer,
-                 feed_dict={
-                     words: np.reshape(input_example, [batch_size, num_steps, 1]),
-                     labels: label_vector,
-                 })
+        sess.run(optimizer, feed_dict={
+            words: np.reshape(input_example, [batch_size, num_steps, 1]),
+            labels: label_vector,
+        })
+
+    # Try to generate some text using the trained model
+    def generate_text(length):
+        result = ''
+        # Specify the initial inputs as 0 (maybe we should set he first char as a random number~)
+        test_words = np.zeros(num_steps)
+        assert length >= 100
+        for i in range(num_steps - 1):
+            predict_vector = sess.run(rnn, feed_dict={
+                words: np.reshape(test_words, [batch_size, num_steps, 1]),
+            })
+            # For the inputs here, we only pick the predict char next
+            predict_int = np.argmax(predict_vector[0][i])
+            # Reset the test words using the predicted char
+            test_words[i + 1] = predict_int
+            result += idx2char[predict_int]
+
+        # As the test words are filled with predicted chars, we just move the inputs forward with one more char
+        for _ in range(length - num_steps):
+            test_words[:-1] = test_words[1:]
+            test_words[-1] = predict_int
+            predict_vector = sess.run(rnn, feed_dict={
+                words: np.reshape(test_words, [batch_size, num_steps, 1]),
+            })
+            predict_int = np.argmax(predict_vector[0][-1])
+            result += idx2char[predict_int]
+
+        return result
+
+    print(generate_text(200))
