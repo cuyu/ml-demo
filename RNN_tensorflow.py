@@ -17,9 +17,17 @@ def recurrent_neural_network(inputs):
     # cell_size = 32
     batch_size, num_steps, feature_dim = inputs.shape
     with tf.variable_scope("recurrent_neural_network", reuse=None):
-        rnn_cell = tf.nn.rnn_cell.GRUCell(output_dimension, activation=tf.nn.sigmoid)
+        # The rnn_cell is similar to the layers in other neural network
+        # Here, we use 3 layers to form a RNN. Note the neuron number of output layer should be equal to the class
+        # number of the data set.
+        rnn_cell1 = tf.nn.rnn_cell.GRUCell(num_units=64, activation=tf.nn.leaky_relu)
+        rnn_cell2 = tf.nn.rnn_cell.GRUCell(num_units=128, activation=tf.nn.leaky_relu)
+        rnn_cell3 = tf.nn.rnn_cell.GRUCell(num_units=output_dimension, activation=tf.nn.sigmoid)
+        multi_rnn_cell = tf.nn.rnn_cell.MultiRNNCell([rnn_cell1, rnn_cell2, rnn_cell3])
         # Initial state of the LSTM memory.
-        state = rnn_cell.zero_state(batch_size, dtype=tf.float32)
+        state = (rnn_cell1.zero_state(batch_size, dtype=tf.float32),
+                 rnn_cell2.zero_state(batch_size, dtype=tf.float32),
+                 rnn_cell3.zero_state(batch_size, dtype=tf.float32),)
         # for i in range(num_steps):
         #     output, state = rnn_cell(inputs[:, i, :], state)
         # final_state = state
@@ -28,7 +36,7 @@ def recurrent_neural_network(inputs):
         # x = tf.layers.dense(final_state, units=output_dimension, activation=tf.nn.sigmoid)
 
         outputs, final_s = tf.nn.dynamic_rnn(
-            rnn_cell,  # cell you have chosen
+            multi_rnn_cell,  # cell you have chosen
             inputs,  # input
             initial_state=state,  # the initial hidden state
             time_major=False,  # False: (batch, time step, input); True: (time step, batch, input)
@@ -49,7 +57,7 @@ if __name__ == '__main__':
     batch_size = 1
     num_steps = 100
     learning_rate = 0.0001
-    steps = 1000
+    steps = 20000
     output_dimension = len(vocab)
 
     # Placeholder for the inputs in a given iteration.
@@ -61,6 +69,11 @@ if __name__ == '__main__':
 
     sess = tf.Session()
     sess.run(tf.global_variables_initializer())
+    tf.summary.scalar('loss', loss)  # For tensorboard
+    # Merge all the summaries, but here is just one loss scalar
+    merged = tf.summary.merge_all()  # For tensorboard
+    # Save the graph and model used by tensorboard
+    file_writer = tf.summary.FileWriter(_MODEL_NAME, sess.graph)  # For tensorboard
 
     for _s in range(steps):
         start_index = np.random.randint(0, len(text_as_int) - num_steps - 1)
@@ -69,10 +82,11 @@ if __name__ == '__main__':
         label_vector = np.zeros([batch_size, num_steps, output_dimension])
         for i in range(len(output_labels)):
             label_vector[0][i][output_labels[i]] = 1
-        loss_value = sess.run([loss], feed_dict={
+        loss_value, summary = sess.run([loss, merged], feed_dict={
             words: np.reshape(input_example, [batch_size, num_steps, 1]),
             labels: label_vector,
         })
+        file_writer.add_summary(summary, _s)  # For tensorboard
         # Train the weights
         sess.run(optimizer, feed_dict={
             words: np.reshape(input_example, [batch_size, num_steps, 1]),
@@ -80,10 +94,11 @@ if __name__ == '__main__':
         })
 
     # Try to generate some text using the trained model
-    def generate_text(length):
+    def generate_text(first_char, length):
         result = ''
         # Specify the initial inputs as 0 (maybe we should set he first char as a random number~)
         test_words = np.zeros(num_steps)
+        test_words[0] = char2idx[first_char]
         assert length >= 100
         for i in range(num_steps - 1):
             predict_vector = sess.run(rnn, feed_dict={
@@ -107,4 +122,5 @@ if __name__ == '__main__':
 
         return result
 
-    print(generate_text(200))
+
+    print(generate_text('Q', 200))
