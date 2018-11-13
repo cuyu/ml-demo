@@ -28,7 +28,7 @@ def recurrent_neural_network(inputs):
         rnn_cell2 = tf.nn.rnn_cell.GRUCell(num_units=128, activation=tf.nn.leaky_relu)
         cell2 = tf.nn.rnn_cell.DropoutWrapper(rnn_cell2, output_keep_prob=keep_prob)
         # rnn_dropout2 = tf.nn.rnn_cell.DropoutWrapper(rnn_cell2, input_keep_prob=keep_prob, output_keep_prob=keep_prob)
-        rnn_cell3 = tf.nn.rnn_cell.GRUCell(num_units=128, activation=tf.nn.sigmoid)
+        rnn_cell3 = tf.nn.rnn_cell.GRUCell(num_units=64, activation=tf.nn.sigmoid)
         cell3 = tf.nn.rnn_cell.DropoutWrapper(rnn_cell3, output_keep_prob=keep_prob)
         multi_rnn_cell = tf.nn.rnn_cell.MultiRNNCell([cell1, cell2, cell3])
         # Initial state of the LSTM memory.
@@ -37,6 +37,7 @@ def recurrent_neural_network(inputs):
         #     output, state = rnn_cell(inputs[:, i, :], state)
         # final_state = state
 
+        # output size is [batch_size, num_steps, num_unit], here is [32, 100, 64]
         outputs, final_s = tf.nn.dynamic_rnn(
             multi_rnn_cell,  # cell you have chosen
             inputs,  # input
@@ -47,16 +48,29 @@ def recurrent_neural_network(inputs):
         # # Add a full connected layer for prediction
         # x = tf.layers.dense(outputs, units=output_dimension, activation=tf.nn.softmax)
 
-        num_units = 128
+        # The num_units here must be the same as the num_units of the output layer of the RNN cell
+        num_units = 64
         with tf.variable_scope('rnn'):
+            # w size: [64, 65]
             w = tf.get_variable("softmax_w", [num_units, output_dimension])
+            # b size: [65]
             b = tf.get_variable("softmax_b", [output_dimension])
 
-            embedding = tf.get_variable("embedding", [output_dimension, num_units])
-            # inputs = tf.nn.embedding_lookup(embedding, inputs)
-
+        # [y00, y01, y02]   [w00, w01, w02, w03, w04]       [y00 * w00 + y01 * w10 + y02 * w20, y00 * w01 + y01 * w11 + y02 * w21, ...
+        # [y10, y11, y12]   [w10, w11, w12, w13, w14]       [y10 * w00 + y11 * w10 + y12 * w20, ...
+        # [y20, y21, y22]   [w20, w21, w22, w23, w24]  ==>  [y20 * w00 + y21 * w10 + y22 * w20, ...
+        # [y30, y31, y32]                                   [y30 * w00 + y31 * w10 + y32 * w20, ...
+        # Above is an example of matrix multiply of y and w.
+        # For each row of y, we can assume it as the output of each step in RNN. So [y00, y01, y02] is the earliest output
+        # For each row of the result (i.e. logits), it is only impacted by corresponding row of y, while all the weights
+        # in w are involved in calculation. We can assume it as one full connected layer (in above example, it has 5
+        # neurons, i.e. each column of w are the weights of one neuron)
+        # So, for output of each step in RNN, we send them to the same full connected layer, and then get the prediction
+        # for each step.
         with tf.name_scope('fc'):
+            # y size: [3200, 64]
             y = tf.reshape(outputs, [-1, num_units])
+            # logits size: [3200, 65]
             logits = tf.matmul(y, w) + b
 
         with tf.name_scope('softmax'):
@@ -88,8 +102,8 @@ if __name__ == '__main__':
     with tf.name_scope('loss'):
         targets = tf.reshape(labels, [-1])
         _loss = seq2seq.sequence_loss_by_example([outputs],
-                                                [targets],
-                                                [tf.ones_like(targets, dtype=tf.float32)])
+                                                 [targets],
+                                                 [tf.ones_like(targets, dtype=tf.float32)])
         loss = tf.reduce_mean(_loss)
 
     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
