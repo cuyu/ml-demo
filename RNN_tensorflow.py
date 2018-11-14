@@ -15,38 +15,31 @@ _TRAIN_FILE = tf.keras.utils.get_file('shakespeare.txt',
 
 
 def recurrent_neural_network(inputs):
-    # cell_size = 32
     batch_size, num_steps, feature_dim = inputs.shape
     keep_prob = 0.6
     with tf.variable_scope("recurrent_neural_network", reuse=None):
         # The rnn_cell is similar to the layers in other neural network
         # Here, we use 3 layers to form a RNN. Note the neuron number of output layer should be equal to the class
-        # number of the data set.
+        # number of the data set if we do not use full connected layer later.
         rnn_cell1 = tf.nn.rnn_cell.GRUCell(num_units=64, activation=tf.nn.leaky_relu)
         cell1 = tf.nn.rnn_cell.DropoutWrapper(rnn_cell1, output_keep_prob=keep_prob)
-        # rnn_dropout1 = tf.nn.rnn_cell.DropoutWrapper(rnn_cell1, input_keep_prob=keep_prob, output_keep_prob=keep_prob)
+
         rnn_cell2 = tf.nn.rnn_cell.GRUCell(num_units=128, activation=tf.nn.leaky_relu)
         cell2 = tf.nn.rnn_cell.DropoutWrapper(rnn_cell2, output_keep_prob=keep_prob)
-        # rnn_dropout2 = tf.nn.rnn_cell.DropoutWrapper(rnn_cell2, input_keep_prob=keep_prob, output_keep_prob=keep_prob)
+
         rnn_cell3 = tf.nn.rnn_cell.GRUCell(num_units=64, activation=tf.nn.sigmoid)
         cell3 = tf.nn.rnn_cell.DropoutWrapper(rnn_cell3, output_keep_prob=keep_prob)
         multi_rnn_cell = tf.nn.rnn_cell.MultiRNNCell([cell1, cell2, cell3])
-        # Initial state of the LSTM memory.
+        # Initial state of the RNN memory.
         state = multi_rnn_cell.zero_state(batch_size, dtype=tf.float32)
-        # for i in range(num_steps):
-        #     output, state = rnn_cell(inputs[:, i, :], state)
-        # final_state = state
 
         # output size is [batch_size, num_steps, num_unit], here is [32, 100, 64]
-        outputs, final_s = tf.nn.dynamic_rnn(
+        rnn_outputs, final_s = tf.nn.dynamic_rnn(
             multi_rnn_cell,  # cell you have chosen
             inputs,  # input
             initial_state=state,  # the initial hidden state
             time_major=False,  # False: (batch, time step, input); True: (time step, batch, input)
         )
-
-        # # Add a full connected layer for prediction
-        # x = tf.layers.dense(outputs, units=output_dimension, activation=tf.nn.softmax)
 
         # The num_units here must be the same as the num_units of the output layer of the RNN cell
         num_units = 64
@@ -69,10 +62,16 @@ def recurrent_neural_network(inputs):
         # for each step.
         with tf.name_scope('fc'):
             # y size: [3200, 64]
-            y = tf.reshape(outputs, [-1, num_units])
+            y = tf.reshape(rnn_outputs, [-1, num_units])
             # logits size: [3200, 65]
             logits = tf.matmul(y, w) + b
 
+        # <Note>: It is totally same to use below commented codes to replace above part!
+        # logits = tf.layers.dense(rnn_outputs, units=output_dimension, activation=None)
+        # logits = tf.reshape(logits, [-1, output_dimension])
+
+        # Outputting the logits is really important here, because we need to use it to calculate loss
+        # fixme: why using prob to calculate loss cannot get good results?
         with tf.name_scope('softmax'):
             prob = tf.nn.softmax(logits)
 
@@ -98,13 +97,17 @@ if __name__ == '__main__':
     words = tf.placeholder(tf.float32, [batch_size, None, 1])
     labels = tf.placeholder(tf.int32, [batch_size, None])
     outputs, prob = recurrent_neural_network(words)
-    # loss = tf.losses.sparse_softmax_cross_entropy(labels, outputs)
+
+    targets = tf.reshape(labels, [-1])
     with tf.name_scope('loss'):
         targets = tf.reshape(labels, [-1])
         _loss = seq2seq.sequence_loss_by_example([outputs],
                                                  [targets],
                                                  [tf.ones_like(targets, dtype=tf.float32)])
         loss = tf.reduce_mean(_loss)
+
+    # <Note>: It is same to use below commented line to get the loss
+    # loss = tf.losses.sparse_softmax_cross_entropy(targets, outputs)
 
     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
 
@@ -145,10 +148,7 @@ if __name__ == '__main__':
         for idx in start_indexes:
             input_example.append(text_as_int[idx: idx + num_steps])
             output_labels.append(text_as_int[idx + 1: idx + num_steps + 1])
-        # label_vector = np.zeros([batch_size, num_steps, output_dimension])
-        # for j in range(batch_size):
-        #     for i in range(num_steps):
-        #         label_vector[j][i][output_labels[j][i]] = 1
+
         loss_value, summary = sess.run([loss, merged], feed_dict={
             words: np.reshape(input_example, [batch_size, num_steps, 1]),
             labels: output_labels,
